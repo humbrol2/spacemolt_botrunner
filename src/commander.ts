@@ -5,7 +5,7 @@ import { resolveModel } from "./model.js";
 import { SpaceMoltAPI } from "./api.js";
 import { SessionManager } from "./session.js";
 import { allTools } from "./tools.js";
-import { runAgentTurn } from "./loop.js";
+import { runAgentTurn, type CompactionState } from "./loop.js";
 import { log, logError } from "./ui.js";
 
 const PROJECT_ROOT = dirname(dirname(Bun.main));
@@ -205,12 +205,14 @@ async function main(): Promise<void> {
 
   log("system", "Agent loop starting...");
 
+  const compaction: CompactionState = { summary: "" };
+
   while (running) {
     try {
       await runAgentTurn(model, context, api, sessionMgr, {
         signal: abortController.signal,
         apiKey,
-      });
+      }, compaction);
     } catch (err) {
       if (abortController.signal.aborted) break;
       logError(`Turn error: ${err instanceof Error ? err.message : String(err)}`);

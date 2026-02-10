@@ -6,14 +6,27 @@ import { executeTool } from "./tools.js";
 import { log, logAgent, logError } from "./ui.js";
 
 const MAX_TOOL_ROUNDS = 30;
-const MAX_CONTEXT_MESSAGES = 200;
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY = 5000;
-const LLM_TIMEOUT_MS = 120_000; // 2 min timeout per LLM call
+const LLM_TIMEOUT_MS = 120_000;
+
+// ─── Context management constants ────────────────────────────
+
+const CHARS_PER_TOKEN = 4;
+const CONTEXT_BUDGET_RATIO = 0.55; // use 55% of context window for messages (rest: system prompt, tools, response)
+const MIN_RECENT_MESSAGES = 10; // never compact below this many recent messages
+const SUMMARY_MAX_TOKENS = 1024;
+
+// ─── Public interface ────────────────────────────────────────
 
 export interface LoopOptions {
   signal?: AbortSignal;
   apiKey?: string;
+}
+
+/** Accumulated summary of compacted messages, carried across turns. */
+export interface CompactionState {
+  summary: string;
 }
 
 export async function runAgentTurn(
@@ -22,6 +35,7 @@ export async function runAgentTurn(
   api: SpaceMoltAPI,
   session: SessionManager,
   options?: LoopOptions,
+  compaction?: CompactionState,
 ): Promise<void> {
   let rounds = 0;
 
@@ -31,8 +45,8 @@ export async function runAgentTurn(
       return;
     }
 
-    // Trim context if too long
-    trimContext(context);
+    // Compact context if approaching token budget
+    await compactContext(model, context, compaction, options);
 
     // Call the LLM
     let response: AssistantMessage;
@@ -57,7 +71,6 @@ export async function runAgentTurn(
     const toolCalls = response.content.filter((c): c is ToolCall => c.type === "toolCall");
 
     if (toolCalls.length === 0) {
-      // No tool calls — turn is done
       return;
     }
 
@@ -88,6 +101,199 @@ export async function runAgentTurn(
   log("wait", `Reached max tool rounds (${MAX_TOOL_ROUNDS}), ending turn`);
 }
 
+// ─── Context compaction ──────────────────────────────────────
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+
+function estimateMessageTokens(msg: Message): number {
+  if (typeof msg.content === "string") {
+    return estimateTokens(msg.content);
+  }
+  if (Array.isArray(msg.content)) {
+    let total = 0;
+    for (const block of msg.content) {
+      if ("text" in block) total += estimateTokens(block.text);
+      else if ("name" in block) total += estimateTokens(block.name + JSON.stringify(block.arguments));
+      else if ("thinking" in block) total += estimateTokens(block.thinking);
+    }
+    return total;
+  }
+  return 0;
+}
+
+function totalMessageTokens(messages: Message[]): number {
+  let total = 0;
+  for (const msg of messages) total += estimateMessageTokens(msg);
+  return total;
+}
+
+/**
+ * Find the nearest "turn boundary" at or after `idx`.
+ * A turn boundary is a position where a user message starts —
+ * i.e. we never split in the middle of an assistant + toolResult group.
+ */
+function findTurnBoundary(messages: Message[], idx: number): number {
+  for (let i = idx; i < messages.length; i++) {
+    if (messages[i].role === "user") return i;
+  }
+  // If no user message found after idx, try before
+  for (let i = idx - 1; i >= 1; i--) {
+    if (messages[i].role === "user") return i;
+  }
+  return idx;
+}
+
+/**
+ * Format old messages into a readable block for the summarizer.
+ */
+function formatMessagesForSummary(messages: Message[]): string {
+  const lines: string[] = [];
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      const text = typeof msg.content === "string" ? msg.content : "(complex)";
+      lines.push(`[USER] ${text}`);
+    } else if (msg.role === "assistant") {
+      for (const block of msg.content) {
+        if ("text" in block && block.text?.trim()) {
+          lines.push(`[AGENT] ${block.text.trim()}`);
+        } else if ("name" in block) {
+          const args = Object.entries(block.arguments || {})
+            .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .join(", ");
+          lines.push(`[TOOL CALL] ${block.name}(${args})`);
+        }
+      }
+    } else if (msg.role === "toolResult") {
+      const text = Array.isArray(msg.content)
+        ? msg.content.map((b: any) => b.text || "").join("")
+        : "";
+      // Trim long results for the summary input
+      const trimmed = text.length > 500 ? text.slice(0, 500) + "..." : text;
+      const errorTag = msg.isError ? " [ERROR]" : "";
+      lines.push(`[RESULT${errorTag}] ${msg.toolName}: ${trimmed}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+async function compactContext(
+  model: Model<any>,
+  context: Context,
+  compaction?: CompactionState,
+  options?: LoopOptions,
+): Promise<void> {
+  const budget = Math.floor(model.contextWindow * CONTEXT_BUDGET_RATIO);
+  const currentTokens = totalMessageTokens(context.messages);
+
+  if (currentTokens < budget) return;
+
+  log("system", `Context at ~${currentTokens} tokens (budget: ${budget}). Compacting...`);
+
+  // Determine split: keep ~60% of budget as recent messages
+  const recentBudget = Math.floor(budget * 0.6);
+  let recentTokens = 0;
+  let splitIdx = context.messages.length;
+
+  for (let i = context.messages.length - 1; i >= 1; i--) {
+    const msgTokens = estimateMessageTokens(context.messages[i]);
+    if (recentTokens + msgTokens > recentBudget && splitIdx < context.messages.length - MIN_RECENT_MESSAGES) {
+      break;
+    }
+    recentTokens += msgTokens;
+    splitIdx = i;
+  }
+
+  // Snap to a clean turn boundary
+  splitIdx = findTurnBoundary(context.messages, splitIdx);
+
+  if (splitIdx <= 1) {
+    log("system", "Nothing to compact (all messages are recent)");
+    return;
+  }
+
+  const oldMessages = context.messages.slice(1, splitIdx); // skip msg[0] (initial instruction)
+  const recentMessages = context.messages.slice(splitIdx);
+
+  // Try LLM summarization
+  let summary: string;
+  try {
+    summary = await summarizeViaLLM(model, oldMessages, compaction?.summary, options);
+    log("system", `Summarized ${oldMessages.length} messages into ~${estimateTokens(summary)} tokens`);
+  } catch (err) {
+    logError(`Summarization failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Fallback: keep the previous summary + a note about lost context
+    summary = compaction?.summary
+      ? compaction.summary + "\n\n(Additional context was lost due to summarization failure. Check captain's log.)"
+      : "(Earlier session context was lost. Check your captain's log for history.)";
+  }
+
+  if (compaction) compaction.summary = summary;
+
+  // Rebuild: [initial instruction] [summary message] [recent messages]
+  const summaryMessage: Message = {
+    role: "user" as const,
+    content: `## Session History Summary\n\nThe following is a summary of your earlier actions this session. Use it to maintain continuity.\n\n${summary}\n\n---\nNow continue your mission. Recent events follow.`,
+    timestamp: Date.now(),
+  };
+
+  context.messages = [context.messages[0], summaryMessage, ...recentMessages];
+  log("system", `Compacted: ${oldMessages.length} old messages → summary + ${recentMessages.length} recent messages`);
+}
+
+async function summarizeViaLLM(
+  model: Model<any>,
+  oldMessages: Message[],
+  previousSummary: string | undefined,
+  options?: LoopOptions,
+): Promise<string> {
+  const transcript = formatMessagesForSummary(oldMessages);
+
+  let prompt = "Summarize this game session transcript. ";
+  prompt += "Focus on: current location, credits, ship status, cargo, active goals, key events, relationships with other players, and any important discoveries. ";
+  prompt += "Be concise — bullet points are fine. Preserve all decision-relevant details.\n\n";
+
+  if (previousSummary) {
+    prompt += "Previous summary (from even earlier):\n" + previousSummary + "\n\n";
+  }
+
+  prompt += "Transcript to summarize:\n" + transcript;
+
+  const summaryCtx: Context = {
+    systemPrompt: "You are a concise summarizer. Output only the summary, no preamble.",
+    messages: [{ role: "user" as const, content: prompt, timestamp: Date.now() }],
+  };
+
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), 30_000);
+  const signal = options?.signal
+    ? combineAbortSignals(options.signal, timeoutController.signal)
+    : timeoutController.signal;
+
+  try {
+    const resp = await complete(model, summaryCtx, {
+      signal,
+      apiKey: options?.apiKey,
+      maxTokens: SUMMARY_MAX_TOKENS,
+    });
+    clearTimeout(timeout);
+
+    const text = resp.content
+      .filter((b): b is { type: "text"; text: string } => "text" in b)
+      .map((b) => b.text)
+      .join("");
+
+    if (!text.trim()) throw new Error("Empty summary response");
+    return text.trim();
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
+}
+
+// ─── LLM call with retry ────────────────────────────────────
+
 async function completeWithRetry(
   model: Model<any>,
   context: Context,
@@ -99,11 +305,9 @@ async function completeWithRetry(
     try {
       log("system", `Calling LLM (attempt ${attempt + 1}/${MAX_RETRIES}, ${context.messages.length} messages)...`);
 
-      // Create a timeout abort if the caller didn't provide one
       const timeoutController = new AbortController();
       const timeout = setTimeout(() => timeoutController.abort(), LLM_TIMEOUT_MS);
 
-      // Combine caller's signal with our timeout
       const signal = options?.signal
         ? combineAbortSignals(options.signal, timeoutController.signal)
         : timeoutController.signal;
@@ -116,7 +320,6 @@ async function completeWithRetry(
         });
         clearTimeout(timeout);
 
-        // Detect empty/error responses that might indicate connection issues
         if (result.stopReason === "error") {
           throw new Error(result.errorMessage || "LLM returned an error response");
         }
@@ -147,15 +350,7 @@ async function completeWithRetry(
   throw lastError || new Error("LLM call failed after retries");
 }
 
-function trimContext(context: Context): void {
-  if (context.messages.length <= MAX_CONTEXT_MESSAGES) return;
-
-  // Keep the first user message (instruction) and trim the oldest messages after it
-  const excess = context.messages.length - MAX_CONTEXT_MESSAGES;
-  // Remove from index 1 (after first message) to preserve initial instruction
-  context.messages.splice(1, excess);
-  log("system", `Trimmed ${excess} old messages from context`);
-}
+// ─── Utilities ───────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

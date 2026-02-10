@@ -382,11 +382,18 @@ export async function executeTool(
       return `Error: [${resp.error.code}] ${resp.error.message}`;
     }
 
-    return formatToolResult(name, resp.result, resp.notifications);
+    return truncateResult(formatToolResult(name, resp.result, resp.notifications));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return `Error executing ${name}: ${msg}`;
   }
+}
+
+const MAX_RESULT_CHARS = 4000;
+
+function truncateResult(text: string): string {
+  if (text.length <= MAX_RESULT_CHARS) return text;
+  return text.slice(0, MAX_RESULT_CHARS) + "\n\n... (truncated, " + text.length + " chars total)";
 }
 
 function executeLocalTool(
