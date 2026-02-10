@@ -366,8 +366,9 @@ export async function executeTool(
   args: Record<string, unknown>,
   api: SpaceMoltAPI,
   session: SessionManager,
+  reason?: string,
 ): Promise<string> {
-  logTool(name, args);
+  logTool(name, args, reason);
 
   // Handle local tools
   if (LOCAL_TOOLS.has(name)) {

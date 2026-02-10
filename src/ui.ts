@@ -30,9 +30,10 @@ export function logError(message: string): void {
   log("error", message);
 }
 
-export function logTool(name: string, args?: Record<string, unknown>): void {
+export function logTool(name: string, args?: Record<string, unknown>, reason?: string): void {
   const summary = args ? ` ${formatArgs(args)}` : "";
-  log("tool", `${BOLD}${name}${RESET}${summary}`);
+  const reasonSuffix = reason ? ` ${DIM}— ${reason}${RESET}` : "";
+  log("tool", `${BOLD}${name}${RESET}${summary}${reasonSuffix}`);
 }
 
 export function logAgent(text: string): void {

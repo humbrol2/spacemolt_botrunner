@@ -60,28 +60,35 @@ export async function runAgentTurn(
     // Add assistant message to context
     context.messages.push(response);
 
-    // Log any text output
-    for (const block of response.content) {
-      if (block.type === "text" && block.text.trim()) {
-        logAgent(block.text.trim());
-      }
-    }
-
-    // Extract tool calls
+    // Extract tool calls and reasoning text
     const toolCalls = response.content.filter((c): c is ToolCall => c.type === "toolCall");
+    const reasoning = response.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text" && !!b.text?.trim())
+      .map((b) => b.text.trim())
+      .join(" ");
 
+    // If no tool calls, log the text and end the turn
     if (toolCalls.length === 0) {
+      if (reasoning) logAgent(reasoning);
       return;
     }
 
-    // Execute each tool call
+    // Build a short reason from the LLM's text (first 120 chars)
+    const reason = reasoning
+      ? reasoning.length > 120 ? reasoning.slice(0, 117) + "..." : reasoning
+      : undefined;
+
+    // Execute each tool call (show reason only on the first one)
+    let showedReason = false;
     for (const toolCall of toolCalls) {
       if (options?.signal?.aborted) {
         log("system", "Turn aborted during tool execution");
         return;
       }
 
-      const result = await executeTool(toolCall.name, toolCall.arguments, api, session);
+      const callReason = !showedReason ? reason : undefined;
+      showedReason = true;
+      const result = await executeTool(toolCall.name, toolCall.arguments, api, session, callReason);
 
       const toolResultMessage: Message = {
         role: "toolResult",
