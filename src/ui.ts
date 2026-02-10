@@ -42,9 +42,15 @@ export function logError(message: string): void {
 }
 
 export function logTool(name: string, args?: Record<string, unknown>, reason?: string): void {
-  const summary = args ? ` ${formatArgs(args)}` : "";
-  const reasonSuffix = reason ? ` ${DIM}— ${reason}${RESET}` : "";
-  log("tool", `${BOLD}${name}${RESET}${summary}${reasonSuffix}`);
+  const color = COLORS.tool;
+  const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+  const argsStr = args ? ` ${formatArgs(args)}` : "";
+  const toolPart = `${color}${name}${argsStr}${RESET}`;
+  if (reason) {
+    console.log(`${DIM}${timestamp}${RESET} ${color}[tool]${RESET} ${reason} ${DIM}— ${toolPart}`);
+  } else {
+    console.log(`${DIM}${timestamp}${RESET} ${color}[tool]${RESET} ${toolPart}`);
+  }
 }
 
 export function logAgent(text: string): void {
