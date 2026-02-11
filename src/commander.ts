@@ -113,8 +113,9 @@ function buildSystemPrompt(
   instruction: string,
   credentials: string,
   todo: string,
+  serverInfo?: string,
 ): string {
-  return `You are an autonomous AI agent playing SpaceMolt, a text-based space MMO.
+  let prompt = `You are an autonomous AI agent playing SpaceMolt, a text-based space MMO.
 
 ## Your Mission
 ${instruction}
@@ -124,7 +125,16 @@ ${promptMd}
 
 ## Your Credentials
 ${credentials}
+`;
 
+  if (serverInfo) {
+    prompt += `
+## Current Game State
+${serverInfo}
+`;
+  }
+
+  prompt += `
 ## Your TODO List
 ${todo || "(empty)"}
 
@@ -142,6 +152,37 @@ ${todo || "(empty)"}
 - If you die, you respawn at your home base. Don't panic, just resume your mission.
 - When starting fresh, follow this loop: undock → travel to asteroid belt → mine → travel back to station → dock → sell ore → refuel → repeat.
 `;
+  return prompt;
+}
+
+// ─── Initial Server Info ─────────────────────────────────────
+
+async function fetchInitialServerInfo(api: SpaceMoltAPI): Promise<string> {
+  const parts: string[] = [];
+
+  // Fetch status (triggers session creation + auto-login)
+  try {
+    const statusResp = await api.execute("get_status");
+    if (!statusResp.error && statusResp.result) {
+      parts.push("### Ship Status (from server)\n```json\n" + JSON.stringify(statusResp.result, null, 2) + "\n```");
+    }
+  } catch {
+    // Non-fatal — agent can query status itself
+  }
+
+  // Fetch version/release notes
+  try {
+    const versionResp = await api.execute("get_version");
+    if (!versionResp.error && versionResp.result) {
+      const v = versionResp.result as Record<string, unknown>;
+      const notes = Array.isArray(v.release_notes) ? v.release_notes.map((n: string) => `  - ${n}`).join("\n") : "";
+      parts.push(`### Game Version\nVersion: ${v.version || "unknown"} (${v.release_date || ""})\n${notes ? "Release Notes:\n" + notes : ""}`);
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return parts.join("\n\n");
 }
 
 // ─── Main ────────────────────────────────────────────────────
@@ -203,8 +244,18 @@ async function main(): Promise<void> {
   const allTools = [...localTools, ...remoteTools];
   log("setup", `Tools loaded: ${remoteTools.length} remote + ${localTools.length} local = ${allTools.length} total`);
 
+  // Fetch initial server state (ship status, release notes) if we have credentials
+  let serverInfo = "";
+  if (creds) {
+    log("setup", "Fetching initial game state from server...");
+    serverInfo = await fetchInitialServerInfo(api);
+    if (serverInfo) {
+      log("setup", "Game state loaded into agent prompt");
+    }
+  }
+
   // Build initial context
-  const systemPrompt = buildSystemPrompt(promptMd, cliArgs.instruction, credentialsPrompt, todo);
+  const systemPrompt = buildSystemPrompt(promptMd, cliArgs.instruction, credentialsPrompt, todo, serverInfo);
 
   const context: Context = {
     systemPrompt,
@@ -293,10 +344,16 @@ async function main(): Promise<void> {
         "",
         "You are logged in.",
       ].join("\n");
+
+      // Lazy-fetch server info if a new player just registered
+      if (!serverInfo) {
+        api.setCredentials(freshCreds.username, freshCreds.password);
+        serverInfo = await fetchInitialServerInfo(api);
+      }
     } else {
       freshCredsPrompt = credentialsPrompt;
     }
-    context.systemPrompt = buildSystemPrompt(promptMd, cliArgs.instruction, freshCredsPrompt, freshTodo);
+    context.systemPrompt = buildSystemPrompt(promptMd, cliArgs.instruction, freshCredsPrompt, freshTodo, serverInfo);
   }
 
   // ─── Session Handoff ────────────────────────────────────────
