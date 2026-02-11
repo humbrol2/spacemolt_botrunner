@@ -2,7 +2,7 @@ import { Type, StringEnum } from "@mariozechner/pi-ai";
 import type { Tool } from "@mariozechner/pi-ai";
 import type { SpaceMoltAPI } from "./api.js";
 import type { SessionManager } from "./session.js";
-import { log, logTool, formatToolResult } from "./ui.js";
+import { log, logTool, logDebug, formatToolResult, logNotifications } from "./ui.js";
 
 // ─── Local Tool Definitions ─────────────────────────────────
 
@@ -64,6 +64,12 @@ export async function executeTool(
   // Execute API tool
   try {
     const resp = await api.execute(name, Object.keys(args).length > 0 ? args : undefined);
+
+    // Log chat/system notifications to stdout for the human watching
+    if (resp.notifications && Array.isArray(resp.notifications) && resp.notifications.length > 0) {
+      logDebug(`Received ${resp.notifications.length} notification(s)`);
+      logNotifications(resp.notifications);
+    }
 
     if (resp.error) {
       return `Error: [${resp.error.code}] ${resp.error.message}`;

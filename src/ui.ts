@@ -14,6 +14,8 @@ const COLORS: Record<string, string> = {
   craft: "\x1b[32m",    // green
   faction: "\x1b[35m",  // magenta
   mission: "\x1b[36m",  // cyan
+  broadcast: "\x1b[91m", // bright red (admin broadcasts)
+  dm: "\x1b[95m",        // bright magenta (private messages)
 };
 
 const RESET = "\x1b[0m";
@@ -72,6 +74,65 @@ function formatArgs(args: Record<string, unknown>): string {
     parts.push(`${key}=${truncated}`);
   }
   return parts.join(" ");
+}
+
+/**
+ * Log chat and system notifications to stdout so the human watching can see them.
+ * Called when we receive notifications from the API response.
+ */
+export function logNotifications(notifications: unknown[]): void {
+  if (!notifications || notifications.length === 0) return;
+
+  for (const n of notifications) {
+    if (typeof n !== "object" || n === null) continue;
+    const notif = n as Record<string, unknown>;
+    const type = notif.type as string | undefined;
+    const msgType = notif.msg_type as string | undefined;
+    let data = notif.data as Record<string, unknown> | string | undefined;
+
+    // The HTTP API stores json.RawMessage in Data — if it arrives as a string, parse it
+    if (typeof data === "string") {
+      try { data = JSON.parse(data) as Record<string, unknown>; } catch { /* leave as string */ }
+    }
+
+    if (msgType === "chat_message" && data && typeof data === "object") {
+      const channel = data.channel as string || "?";
+      const sender = data.sender as string || "Unknown";
+      const content = data.content as string || "";
+
+      if (sender === "[ADMIN]") {
+        log("broadcast", `[BROADCAST] ${content}`);
+      } else if (channel === "private") {
+        log("dm", `[DM from ${sender}] ${content}`);
+      } else {
+        const tag = channel.toUpperCase();
+        log("chat", `[${tag}] ${sender}: ${content}`);
+      }
+      continue;
+    }
+
+    // System/tip notifications (gameplay tips, system messages)
+    if ((type === "system" || type === "tip") && data && typeof data === "object") {
+      const message = data.message as string || JSON.stringify(data);
+      log("broadcast", `[SYSTEM] ${message}`);
+      continue;
+    }
+
+    // Combat notifications
+    if (type === "combat" && data && typeof data === "object") {
+      log("combat", `[COMBAT] ${data.message || JSON.stringify(data)}`);
+      continue;
+    }
+
+    // Trade notifications
+    if (type === "trade" && data && typeof data === "object") {
+      log("trade", `[TRADE] ${data.message || JSON.stringify(data)}`);
+      continue;
+    }
+
+    // Catch-all: log any other notification type so nothing is silently dropped
+    logDebug(`[notif type=${type} msg_type=${msgType}] ${JSON.stringify(data)}`);
+  }
 }
 
 export function formatNotifications(notifications: unknown[]): string {
