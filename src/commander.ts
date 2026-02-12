@@ -174,35 +174,35 @@ function formatStatusMarkdown(result: Record<string, unknown>): string {
   const loc = p.docked_at_base
     ? `${p.current_system} > ${p.current_poi} (docked at ${p.docked_at_base})`
     : `${p.current_system} > ${p.current_poi}`;
-  lines.push(`**Player:** ${p.username} (${p.empire}) | ${Number(p.credits || 0).toLocaleString()} credits | ${loc}`);
-  if (p.faction_id) lines.push(`**Faction:** ${p.faction_id} (${p.faction_rank || "member"})`);
+  lines.push(`Player: ${p.username} (${p.empire}) | ${Number(p.credits || 0).toLocaleString()} credits | ${loc}`);
+  if (p.faction_id) lines.push(`Faction: ${p.faction_id} (${p.faction_rank || "member"})`);
 
   // Ship summary
-  lines.push(`**Ship:** ${s.class_id || "unknown"} "${s.name || ""}" | Hull: ${s.hull}/${s.max_hull} | Shield: ${s.shield}/${s.max_shield} | Fuel: ${s.fuel}/${s.max_fuel}`);
-  lines.push(`**Cargo:** ${s.cargo_used}/${s.cargo_capacity} | CPU: ${s.cpu_used}/${s.cpu_capacity} | Power: ${s.power_used}/${s.power_capacity}`);
+  lines.push(`Ship: ${s.class_id || "unknown"} "${s.name || ""}" | Hull: ${s.hull}/${s.max_hull} | Shield: ${s.shield}/${s.max_shield} | Fuel: ${s.fuel}/${s.max_fuel}`);
+  lines.push(`Cargo: ${s.cargo_used}/${s.cargo_capacity} | CPU: ${s.cpu_used}/${s.cpu_capacity} | Power: ${s.power_used}/${s.power_capacity}`);
 
   // Modules
   const modules = s.modules as string[] | undefined;
   if (modules && modules.length > 0) {
-    lines.push(`**Modules:** ${modules.join(", ")}`);
+    lines.push(`Modules: ${modules.join(", ")}`);
   }
 
   // Cargo items
   const cargo = s.cargo as Array<{ item_id: string; quantity: number }> | undefined;
   if (cargo && cargo.length > 0) {
-    lines.push(`**Cargo items:** ${cargo.map(c => `${c.item_id}: ${c.quantity}`).join(", ")}`);
+    lines.push(`Cargo items: ${cargo.map(c => `${c.item_id}: ${c.quantity}`).join(", ")}`);
   }
 
   // Skills (compact)
   const skillEntries = Object.entries(skills);
   if (skillEntries.length > 0) {
-    lines.push(`**Skills:** ${skillEntries.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
+    lines.push(`Skills: ${skillEntries.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
   }
 
   // Stats (compact, only non-zero)
   const statEntries = Object.entries(stats).filter(([, v]) => v && v !== 0);
   if (statEntries.length > 0) {
-    lines.push(`**Stats:** ${statEntries.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
+    lines.push(`Stats: ${statEntries.map(([k, v]) => `${k}: ${v}`).join(", ")}`);
   }
 
   return lines.join("\n");
@@ -215,7 +215,7 @@ async function fetchInitialServerInfo(api: SpaceMoltAPI): Promise<string> {
   try {
     const statusResp = await api.execute("get_status");
     if (!statusResp.error && statusResp.result) {
-      parts.push("### Ship Status\n" + formatStatusMarkdown(statusResp.result as Record<string, unknown>));
+      parts.push("Ship Status:\n" + formatStatusMarkdown(statusResp.result as Record<string, unknown>));
     }
   } catch {
     // Non-fatal — agent can query status itself
@@ -227,7 +227,7 @@ async function fetchInitialServerInfo(api: SpaceMoltAPI): Promise<string> {
     if (!logResp.error && logResp.result) {
       const entry = logResp.result as Record<string, unknown>;
       if (entry.entry) {
-        parts.push(`### Last Captain's Log (${entry.created_at || "unknown date"})\n${entry.entry}`);
+        parts.push(`Last Captain's Log (${entry.created_at || "unknown date"}):\n${entry.entry}`);
       }
     }
   } catch {
@@ -240,7 +240,7 @@ async function fetchInitialServerInfo(api: SpaceMoltAPI): Promise<string> {
     if (!versionResp.error && versionResp.result) {
       const v = versionResp.result as Record<string, unknown>;
       const notes = Array.isArray(v.notes) ? v.notes.map((n: string) => `- ${n}`).join("\n") : "";
-      parts.push(`### Game Version\nv${v.version || "?"} (${v.release_date || "?"})\n${notes}`);
+      parts.push(`Game v${v.version || "?"} (${v.release_date || "?"})\n${notes}`);
     }
   } catch {
     // Non-fatal
