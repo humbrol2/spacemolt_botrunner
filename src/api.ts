@@ -61,10 +61,10 @@ export class SpaceMoltAPI {
     if (resp.error) {
       const code = resp.error.code;
 
-      if (code === "rate_limited" && resp.error.wait_seconds) {
-        const wait = Math.ceil(resp.error.wait_seconds * 1000);
-        log("wait", `Rate limited, waiting ${resp.error.wait_seconds}s...`);
-        await sleep(wait);
+      if (code === "rate_limited") {
+        const secs = resp.error.wait_seconds || 10;
+        log("wait", `Rate limited — sleeping ${secs}s...`);
+        await sleep(Math.ceil(secs * 1000));
         return this.execute(command, payload);
       }
 
