@@ -15,6 +15,11 @@ export interface ApiResponse {
 }
 
 const DEFAULT_BASE_URL = "https://game.spacemolt.com/api/v1";
+
+// Commands with sub-actions that route through v2 endpoints instead of v1.
+// v1: POST /api/v1/{command} { action: "sub", ...params }
+// v2: POST /api/v2/spacemolt_{command}/{action} { ...params }
+const V2_ROUTED_COMMANDS = new Set(["facility"]);
 const MAX_RECONNECT_ATTEMPTS = 6;
 const RECONNECT_BASE_DELAY = 5_000; // 5s, 10s, 20s, 40s, 80s, 160s
 
@@ -142,7 +147,23 @@ export class SpaceMoltAPI {
   }
 
   private async doRequest(command: string, payload?: Record<string, unknown>): Promise<ApiResponse> {
-    const url = `${this.baseUrl}/${command}`;
+    // Route commands with sub-actions through v2 endpoints where each action
+    // is a separate path: /api/v2/spacemolt_{command}/{action}
+    // This fixes facility commands where v1 doesn't pass parameters correctly.
+    let url: string;
+    let body = payload;
+
+    if (payload?.action && typeof payload.action === "string" && V2_ROUTED_COMMANDS.has(command)) {
+      const action = payload.action as string;
+      const v2Base = this.baseUrl.replace("/api/v1", "/api/v2");
+      url = `${v2Base}/spacemolt_${command}/${action}`;
+      // Remove 'action' from payload — it's now in the URL path
+      const { action: _, ...rest } = payload;
+      body = Object.keys(rest).length > 0 ? rest : undefined;
+    } else {
+      url = `${this.baseUrl}/${command}`;
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -155,7 +176,7 @@ export class SpaceMoltAPI {
     const resp = await fetch(url, {
       method: "POST",
       headers,
-      body: payload ? JSON.stringify(payload) : undefined,
+      body: body ? JSON.stringify(body) : undefined,
     });
 
     // 401 = session gone (server restarted, etc.) — return as session error
@@ -168,7 +189,22 @@ export class SpaceMoltAPI {
     // Try to parse JSON for any status code. If the server returned an HTTP
     // response (even an error), the connection is fine — don't throw.
     try {
-      return (await resp.json()) as ApiResponse;
+      const data = (await resp.json()) as ApiResponse & { structuredContent?: unknown };
+      // v2 returns structured data in structuredContent; prefer it over result
+      // (v2 result is a human-readable text summary, structuredContent is the raw JSON)
+      if (data.structuredContent !== undefined) {
+        data.result = data.structuredContent;
+      }
+      // Normalize v2 session fields (snake_case → camelCase)
+      if (data.session) {
+        const s = data.session as Record<string, unknown>;
+        if (s.created_at && !s.createdAt) {
+          s.createdAt = s.created_at;
+          s.expiresAt = s.expires_at;
+          s.playerId = s.player_id;
+        }
+      }
+      return data as ApiResponse;
     } catch {
       // Non-JSON response (e.g. HTML error page, empty body)
       return {
