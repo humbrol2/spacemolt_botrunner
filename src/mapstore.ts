@@ -475,6 +475,35 @@ class MapStore {
     return sys.pois.find((p) => p.has_base) ?? null;
   }
 
+  /** BFS to find the nearest known system that has a station. Returns { systemId, poiId, hops } or null. */
+  findNearestStationSystem(fromSystemId: string): { systemId: string; poiId: string; poiName: string; hops: number } | null {
+    // Check current system first
+    const localStation = this.findNearestStation(fromSystemId);
+    if (localStation) return { systemId: fromSystemId, poiId: localStation.id, poiName: localStation.name, hops: 0 };
+
+    const visited = new Set<string>([fromSystemId]);
+    const queue: Array<{ id: string; hops: number }> = [{ id: fromSystemId, hops: 0 }];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const conns = this.data.systems[current.id]?.connections ?? [];
+
+      for (const conn of conns) {
+        const nextId = conn.system_id;
+        if (!nextId || visited.has(nextId)) continue;
+        visited.add(nextId);
+
+        const station = this.findNearestStation(nextId);
+        if (station) {
+          return { systemId: nextId, poiId: station.id, poiName: station.name, hops: current.hops + 1 };
+        }
+        queue.push({ id: nextId, hops: current.hops + 1 });
+      }
+    }
+
+    return null;
+  }
+
   /** Find the best sell price for an item across all known markets. */
   findBestSellPrice(itemId: string): { systemId: string; poiId: string; poiName: string; price: number } | null {
     let best: { systemId: string; poiId: string; poiName: string; price: number } | null = null;

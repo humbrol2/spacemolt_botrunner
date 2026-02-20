@@ -98,7 +98,6 @@ export class WebServer {
 
   start(): void {
     const indexPath = join(import.meta.dir, "index.html");
-    const indexHtml = readFileSync(indexPath, "utf-8");
 
     this.server = Bun.serve<WSData>({
       port: this.port,
@@ -137,9 +136,12 @@ export class WebServer {
           return Response.json({ ok: false, error: "No action handler" });
         }
 
-        // Serve index.html for all other routes
-        return new Response(indexHtml, {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
+        // Serve index.html for all other routes (read fresh for dev, no cache)
+        return new Response(readFileSync(indexPath, "utf-8"), {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
         });
       },
 
@@ -169,18 +171,22 @@ export class WebServer {
         },
 
         message: async (ws: ServerWebSocket<WSData>, msg: string | Buffer) => {
+          let seq: unknown;
+          let isExec = false;
           try {
             const raw = JSON.parse(typeof msg === "string" ? msg : msg.toString());
-            const seq = raw._seq;
+            seq = raw._seq;
+            isExec = raw.type === "exec";
             const data = raw as WebAction;
             if (this.onAction) {
               const result = await this.onAction(data);
-              const resType = data.type === "exec" ? "execResult" : "actionResult";
+              const resType = isExec ? "execResult" : "actionResult";
               ws.send(JSON.stringify({ type: resType, _seq: seq, ...result }));
             }
           } catch (err) {
             ws.send(JSON.stringify({
-              type: "actionResult",
+              type: isExec ? "execResult" : "actionResult",
+              _seq: seq,
               ok: false,
               error: err instanceof Error ? err.message : String(err),
             }));

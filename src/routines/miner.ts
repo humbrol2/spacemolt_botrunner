@@ -8,11 +8,12 @@ import {
   parseSystemData,
   getSystemInfo,
   parseOreFromMineResult,
+  collectFromStorage,
   ensureDocked,
   ensureUndocked,
   tryRefuel,
   repairShip,
-  safetyCheck,
+  ensureFueled,
   navigateToSystem,
   refuelAtStation,
   readSettings,
@@ -26,7 +27,7 @@ import {
 /** Read miner settings from data/settings.json.
  *  If username is provided, per-bot targetOre override is checked first. */
 function getMinerSettings(username?: string): {
-  sellOre: boolean;
+  depositMode: "storage" | "faction" | "sell";
   cargoThreshold: number;
   refuelThreshold: number;
   repairThreshold: number;
@@ -37,8 +38,17 @@ function getMinerSettings(username?: string): {
   const all = readSettings();
   const m = all.miner || {};
   const botOverrides = username ? (all[username] || {}) : {};
+
+  // depositMode: new field, falls back to sellOre boolean for backward compat
+  let depositMode: "storage" | "faction" | "sell" = "storage";
+  if (m.depositMode === "faction" || m.depositMode === "sell" || m.depositMode === "storage") {
+    depositMode = m.depositMode as "storage" | "faction" | "sell";
+  } else if (m.sellOre === true) {
+    depositMode = "sell";
+  }
+
   return {
-    sellOre: m.sellOre === true,
+    depositMode,
     cargoThreshold: (m.cargoThreshold as number) || 80,
     refuelThreshold: (m.refuelThreshold as number) || 50,
     repairThreshold: (m.repairThreshold as number) || 40,
@@ -80,12 +90,28 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     const targetOre = settings.targetOre;
     const miningSystem = settings.system || "";
 
-    // ── Status + safety checks ──
+    // ── Status + fuel/hull checks ──
     yield "get_status";
     await bot.refreshStatus();
     logStatus(ctx);
-    yield "safety_check";
-    await safetyCheck(ctx, safetyOpts);
+
+    // Ensure fuel before doing anything
+    yield "fuel_check";
+    const fueled = await ensureFueled(ctx, safetyOpts.fuelThresholdPct);
+    if (!fueled) {
+      ctx.log("error", "Cannot refuel — waiting 30s...");
+      await sleep(30000);
+      continue;
+    }
+
+    // Hull check — repair immediately if low
+    await bot.refreshStatus();
+    const hullPct = bot.maxHull > 0 ? Math.round((bot.hull / bot.maxHull) * 100) : 100;
+    if (hullPct <= 40) {
+      ctx.log("system", `Hull critical (${hullPct}%) — returning to station for repair`);
+      await ensureDocked(ctx);
+      await repairShip(ctx);
+    }
 
     // ── Undock if docked ──
     await ensureUndocked(ctx);
@@ -218,17 +244,17 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     while (bot.state === "running") {
       await bot.refreshStatus();
 
-      // Safety: hull mid-mining
+      // Safety: hull mid-mining — return to station immediately if <= 40%
       const midHull = bot.maxHull > 0 ? Math.round((bot.hull / bot.maxHull) * 100) : 100;
-      if (midHull < safetyOpts.hullThresholdPct && stationPoi) {
-        ctx.log("system", `Hull low (${midHull}%) — emergency return to station`);
+      if (midHull <= 40) {
+        ctx.log("system", `Hull critical (${midHull}%) — returning to station for repair`);
         break;
       }
 
-      // Safety: fuel mid-mining
+      // Safety: fuel mid-mining — break if below threshold
       const midFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-      if (midFuel < Math.max(safetyOpts.fuelThresholdPct - 10, 15)) {
-        ctx.log("system", `Fuel critically low (${midFuel}%) — emergency return to station`);
+      if (midFuel < safetyOpts.fuelThresholdPct) {
+        ctx.log("system", `Fuel low (${midFuel}%) — heading to station to refuel`);
         break;
       }
 
@@ -276,7 +302,10 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
       yield "return_home";
       ctx.log("travel", `Returning to home system ${homeSystem}...`);
 
-      if (stationPoi) {
+      // Ensure fueled before the journey home
+      yield "pre_return_fuel";
+      const returnFueled = await ensureFueled(ctx, safetyOpts.fuelThresholdPct);
+      if (!returnFueled && stationPoi) {
         await refuelAtStation(ctx, stationPoi, safetyOpts.fuelThresholdPct);
       }
 
@@ -314,6 +343,9 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     }
     bot.docked = true;
 
+    // ── Collect gifted credits/items + record market prices ──
+    await collectFromStorage(ctx);
+
     // ── Sell or Deposit cargo ──
     yield "unload_cargo";
     const cargoResp = await bot.exec("get_cargo");
@@ -326,7 +358,7 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
         []
       ) as Array<Record<string, unknown>>;
 
-      if (settings.sellOre) {
+      if (settings.depositMode === "sell") {
         ctx.log("trade", "Selling ore at station...");
         for (const item of cargoItems) {
           const itemId = (item.item_id as string) || "";
@@ -340,6 +372,22 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
               await bot.exec("deposit_items", { item_id: itemId, quantity });
             }
             yield "selling";
+          }
+        }
+      } else if (settings.depositMode === "faction") {
+        ctx.log("trade", "Depositing cargo to faction storage...");
+        for (const item of cargoItems) {
+          const itemId = (item.item_id as string) || "";
+          const quantity = (item.quantity as number) || 0;
+          if (itemId && quantity > 0) {
+            const displayName = (item.name as string) || itemId;
+            ctx.log("trade", `Depositing ${quantity}x ${displayName} to faction...`);
+            const factionResp = await bot.exec("faction_deposit_items", { item_id: itemId, quantity });
+            if (factionResp.error) {
+              ctx.log("trade", `Faction deposit failed for ${displayName}: ${factionResp.error.message} — depositing to personal storage`);
+              await bot.exec("deposit_items", { item_id: itemId, quantity });
+            }
+            yield "depositing";
           }
         }
       } else {

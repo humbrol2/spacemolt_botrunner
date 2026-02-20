@@ -3,6 +3,7 @@ import {
   ensureDocked,
   tryRefuel,
   repairShip,
+  ensureFueled,
   readSettings,
   scavengeWrecks,
   sleep,
@@ -233,7 +234,7 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // ── Refuel + Repair ──
     yield "refuel";
-    await tryRefuel(ctx);
+    await ensureFueled(ctx, settings.refuelThreshold);
     yield "repair";
     await repairShip(ctx);
 

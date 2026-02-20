@@ -108,6 +108,7 @@
     padding: 16px;
     gap: 16px;
     overflow: hidden;
+    position: relative;
   }
   .tab-page.active {
     display: flex;
@@ -811,6 +812,69 @@
     scrollbar-color: #484f58 #21262d;
   }
 
+  /* System map SVG overlay */
+  .system-map-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .system-map-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .system-map-header {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .system-map-svg-wrap {
+    flex: 1;
+    min-height: 300px;
+    max-height: 500px;
+    background: radial-gradient(ellipse at center, rgba(13,21,37,0.9) 0%, rgba(6,10,16,0.95) 100%);
+    overflow: hidden;
+  }
+  .system-map-svg-wrap svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .system-map-legend {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .sml-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sml-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
   /* System card — collapsible */
   .sys-card {
     border: 1px solid var(--border);
@@ -1422,6 +1486,141 @@
     .faction-layout { flex-direction: column; }
     .faction-sidebar { width: 100%; max-height: 120px; }
   }
+
+  /* ── Shipyard page ───────────────────────────────────── */
+  .shipyard-panel-nav {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .shipyard-stat-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+  }
+  .shipyard-stat-grid .ssl { color: var(--text-dim); }
+  .shipyard-stat-grid .ssv { color: var(--text); }
+  .shipyard-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #21262d;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+  .shipyard-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .shipyard-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .shipyard-slot {
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .shipyard-slot .slot-type {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .shipyard-slot .slot-name {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .shipyard-slot .slot-empty {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .shipyard-ship-card {
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .shipyard-ship-card .ssc-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .shipyard-ship-card .ssc-detail {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .shipyard-ship-card .ssc-stats {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .shipyard-ship-card .ssc-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .shipyard-active-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    background: #1a3a2a;
+    color: #4ade80;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .shipyard-color-preview {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    display: inline-block;
+    vertical-align: middle;
+    cursor: pointer;
+  }
+  .shipyard-filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .shipyard-filter-bar select,
+  .shipyard-filter-bar input {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .shipyard-mod-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid #21262d;
+    font-size: 12px;
+  }
+  .shipyard-mod-row:last-child { border-bottom: none; }
+  .shipyard-mod-name { color: var(--text); font-weight: 500; }
+  .shipyard-mod-detail { color: var(--text-dim); font-size: 11px; }
 </style>
 </head>
 <body>
@@ -1434,6 +1633,7 @@
       <div class="top-tab" data-tab="map" onclick="switchTab('map')">Map</div>
       <div class="top-tab" data-tab="missions" onclick="switchTab('missions')">Missions</div>
       <div class="top-tab" data-tab="faction" onclick="switchTab('faction')">Faction</div>
+      <div class="top-tab" data-tab="shipyard" onclick="switchTab('shipyard')">Shipyard</div>
       <div class="top-tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
     </div>
   </div>
@@ -1546,10 +1746,24 @@
             <option value="pois">Most POIs</option>
             <option value="security">Security Level</option>
           </select>
+          <div style="margin-top:12px;border-top:1px solid #21262d;padding-top:10px">
+            <button class="sm" style="width:100%" onclick="toggleMarketOverview()">Market Overview</button>
+          </div>
         </div>
       </div>
       <div class="map-content" id="mapContent">
         <div class="map-empty">No map data yet. Start a bot to begin exploring!</div>
+      </div>
+    </div>
+    <!-- System map SVG overlay -->
+    <div id="systemMapOverlay" class="system-map-overlay" style="display:none">
+      <div class="system-map-panel">
+        <div class="system-map-header">
+          <span id="systemMapTitle" style="font-weight:700;color:var(--text-bright)"></span>
+          <button class="sm" onclick="closeSystemMap()">Close</button>
+        </div>
+        <div class="system-map-svg-wrap" id="systemMapSvgWrap"></div>
+        <div class="system-map-legend" id="systemMapLegend"></div>
       </div>
     </div>
   </div>
@@ -1580,6 +1794,21 @@
       </div>
       <div class="faction-content" id="factionContent">
         <div class="faction-no-data">Select a bot to view or manage its faction.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Shipyard Tab ══ -->
+  <div class="tab-page" id="page-shipyard">
+    <div class="faction-layout">
+      <div class="faction-sidebar">
+        <div class="faction-sidebar-header">Shipyard</div>
+        <div class="faction-sidebar-body" id="shipyardSidebarBody">
+          <!-- filled by JS -->
+        </div>
+      </div>
+      <div class="faction-content" id="shipyardContent">
+        <div class="faction-no-data">Select a bot to manage ships.</div>
       </div>
     </div>
   </div>
@@ -1670,6 +1899,17 @@ let profileSkillsList = null;  // full skill objects for display (null = not fet
 let mapData = {};             // systems from mapStore
 let activeOreFilters = new Set(); // selected ore item_ids to filter by
 
+/** Resolve a system ID + optional POI ID to display names using mapData. */
+function resolveLocation(systemId, poiId) {
+  if (!systemId) return '';
+  const sys = mapData[systemId];
+  const sysName = sys?.name || systemId;
+  if (!poiId) return sysName;
+  const poi = (sys?.pois || []).find(p => p.id === poiId);
+  const poiName = poi?.name || poiId;
+  return `${sysName} - ${poiName}`;
+}
+
 const activityEl = document.getElementById('activityLog');
 const broadcastEl = document.getElementById('broadcastLog');
 const systemEl = document.getElementById('systemLog');
@@ -1698,6 +1938,7 @@ function switchTab(name) {
   if (name === 'map') renderMapPage();
   if (name === 'missions') renderMissionsPage();
   if (name === 'faction') renderFactionPage();
+  if (name === 'shipyard') renderShipyardPage();
 }
 
 // ── WebSocket ──────────────────────────────────────────────
@@ -1790,7 +2031,7 @@ function renderBots() {
   }
   tbody.innerHTML = bots.map(bot => {
     const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) + '%' : bot.fuel;
-    const loc = bot.poi ? `${bot.system} - ${bot.poi}` : (bot.system || bot.location);
+    const loc = bot.poi ? resolveLocation(bot.system, bot.poi) : (resolveLocation(bot.system) || bot.location);
     const stateLabel = bot.state === 'running' && bot.routine ? bot.routine : bot.state;
     const hullShd = (bot.maxHull > 0 || bot.maxShield > 0) ? `${bot.hull}/${bot.shield}` : '-';
     const cargo = bot.cargoMax > 0 ? `${bot.cargo}/${bot.cargoMax}` : `${bot.cargo}`;
@@ -1826,6 +2067,7 @@ function openProfile(username) {
   profileSystemData = null;
   profileRecipes = null;
   profileSkills = {};
+  profileSkillsList = null;
 
   // Hide all tabs, show profile
   document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
@@ -1931,7 +2173,7 @@ function renderProfileSidebar() {
   renderProfileTopbar();
 
   const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : bot.fuel;
-  const loc = bot.poi ? `${bot.system} - ${bot.poi}` : (bot.system || bot.location);
+  const loc = bot.poi ? resolveLocation(bot.system, bot.poi) : (resolveLocation(bot.system) || bot.location);
 
   const invItems = bot.inventory && bot.inventory.length > 0
     ? bot.inventory.map(i => `<div class="inv-item"><span class="inv-name">${esc(i.name)}</span><span class="inv-qty">x${i.quantity}</span></div>`).join('')
@@ -1983,7 +2225,7 @@ function renderProfileSidebar() {
 
 function renderSkillsList() {
   if (profileSkillsList === null || profileSkillsList === undefined) {
-    return '<div class="inv-empty">Loading...</div>';
+    return `<div class="inv-empty">Loading... <button class="sm" style="margin-left:8px;font-size:10px" onclick="if(profileBot)fetchSkills(profileBot)">Retry</button></div>`;
   }
   if (profileSkillsList.length === 0) {
     return '<div class="inv-empty">No skills data</div>';
@@ -2298,7 +2540,7 @@ function mcAutoRoute() {
     const bot = getProfileBot();
     const currentSys = bot ? (bot.system || '') : '';
     const hops = allHops[0] === currentSys ? allHops.slice(1) : allHops;
-    logResponse(`<span class="resp-ok">Route: ${allHops.map(h => esc(String(h))).join(' → ')} (${hops.length} jump${hops.length !== 1 ? 's' : ''})</span>`);
+    logResponse(`<span class="resp-ok">Route: ${allHops.map(h => esc(resolveLocation(String(h)) || String(h))).join(' → ')} (${hops.length} jump${hops.length !== 1 ? 's' : ''})</span>`);
 
     for (let i = 0; i < hops.length; i++) {
       const hop = hops[i];
@@ -2420,12 +2662,14 @@ const FORMATTERS = {
 
   travel(d) {
     const action = d.action || '';
-    const dest = d.destination || d.poi || '';
+    const destId = d.destination || d.poi || '';
+    const dest = resolveLocation(d.system, destId) || destId;
     return esc(`${action}${dest ? ' -> ' + dest : ''}`);
   },
 
   jump(d) {
-    const dest = d.destination || d.system || d.target_system || '';
+    const destId = d.destination || d.system || d.target_system || '';
+    const dest = resolveLocation(destId) || destId;
     return esc(`Jumped${dest ? ' to ' + dest : ''}`);
   },
 
@@ -2433,7 +2677,7 @@ const FORMATTERS = {
     const route = d.route || d.path || d.systems || d.hops || [];
     if (!route.length) return 'No route found';
     const hops = route.map(h => typeof h === 'string' ? h : (h.system_id || h.id || h.name || h));
-    return `Route (${hops.length} hops): ${hops.map(h => esc(String(h))).join(' → ')}`;
+    return `Route (${hops.length} hops): ${hops.map(h => esc(resolveLocation(String(h)) || String(h))).join(' → ')}`;
   },
 
   mine(d) {
@@ -2666,10 +2910,23 @@ let execSeq = 0;
 
 function sendExec(botName, command, params, callback) {
   const seq = ++execSeq;
-  if (callback) execCallbacks[seq] = callback;
+  if (callback) {
+    execCallbacks[seq] = callback;
+    // Safety timeout — fire callback with error if server never responds
+    setTimeout(() => {
+      if (execCallbacks[seq]) {
+        execCallbacks[seq]({ ok: false, error: `Timeout: ${command} did not respond` });
+        delete execCallbacks[seq];
+      }
+    }, 30000);
+  }
   const msg = { type: 'exec', bot: botName, command, params, _seq: seq };
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg));
+  } else if (callback) {
+    // WebSocket not connected — fire error immediately
+    delete execCallbacks[seq];
+    callback({ ok: false, error: 'Not connected to server' });
   }
 }
 
@@ -2735,7 +2992,23 @@ function fetchSkills(username) {
       return;
     }
     const d = result.data;
-    const skills = Array.isArray(d) ? d : (d.skills || d.player_skills || []);
+    let raw = d.skills || d.player_skills || d;
+
+    // Normalize: if skills is an object keyed by name, convert to array
+    let skills;
+    if (Array.isArray(raw)) {
+      skills = raw;
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      skills = Object.entries(raw).map(([name, val]) => {
+        if (val && typeof val === 'object') {
+          return { name, ...val };
+        }
+        return { name, level: val };
+      });
+    } else {
+      skills = [];
+    }
+
     profileSkills = {};
     profileSkillsList = skills;
     for (const s of skills) {
@@ -2825,11 +3098,127 @@ function startBotFromProfile() {
 
 // ── Map ────────────────────────────────────────────────────
 const expandedSystems = new Set();
+let showingMarketOverview = false;
 
 function renderMapPage() {
   buildOreFilters();
   renderMapStats();
-  renderMap();
+  if (showingMarketOverview) {
+    renderMarketOverview();
+  } else {
+    renderMap();
+  }
+}
+
+function toggleMarketOverview() {
+  showingMarketOverview = !showingMarketOverview;
+  if (showingMarketOverview) {
+    renderMarketOverview();
+  } else {
+    renderMap();
+  }
+}
+
+function renderMarketOverview() {
+  const container = document.getElementById('mapContent');
+  if (!container) return;
+
+  // Collect all market items across all stations with best prices
+  const itemPrices = new Map(); // item_id -> { name, stations: [{ sysName, stationName, buy, sell, updated }] }
+
+  for (const [sysId, sys] of Object.entries(mapData)) {
+    const sysName = sys.name || sysId;
+    for (const poi of (sys.pois || [])) {
+      if (!poi.market || poi.market.length === 0) continue;
+      const stationName = poi.name || poi.id;
+      for (const m of poi.market) {
+        if (!m.item_id) continue;
+        if (!itemPrices.has(m.item_id)) {
+          itemPrices.set(m.item_id, { name: m.item_name || m.item_id, stations: [] });
+        }
+        itemPrices.get(m.item_id).stations.push({
+          sysId, sysName, stationName,
+          buy: m.best_buy,
+          sell: m.best_sell,
+          updated: m.last_updated
+        });
+      }
+    }
+  }
+
+  if (itemPrices.size === 0) {
+    container.innerHTML = `
+      <div style="padding:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <h3 style="margin:0;color:var(--text-bright)">Market Overview</h3>
+          <button class="sm" onclick="toggleMarketOverview()">Back to Map</button>
+        </div>
+        <div class="map-empty">No market data yet. Bots record market prices when they dock at stations.</div>
+      </div>`;
+    return;
+  }
+
+  // Sort items alphabetically
+  const sorted = [...itemPrices.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+  // Search filter
+  const searchTerm = (document.getElementById('mapSearch')?.value || '').toLowerCase();
+
+  let html = `<div style="padding:16px">`;
+  html += `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">`;
+  html += `<h3 style="margin:0;color:var(--text-bright)">Market Overview</h3>`;
+  html += `<span style="color:var(--text-dim);font-size:12px">${itemPrices.size} items across ${Object.keys(mapData).length} systems</span>`;
+  html += `<button class="sm" onclick="toggleMarketOverview()">Back to Map</button>`;
+  html += `</div>`;
+
+  html += `<table class="mkt-table" style="width:100%">`;
+  html += `<thead><tr>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketOverview('name')">Item</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketOverview('bestSell')">Best Sell</th>`;
+  html += `<th>Best Sell Station</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketOverview('bestBuy')">Cheapest Buy</th>`;
+  html += `<th>Cheapest Buy Station</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketOverview('spread')">Spread</th>`;
+  html += `<th># Stations</th>`;
+  html += `</tr></thead><tbody>`;
+
+  for (const [itemId, data] of sorted) {
+    if (searchTerm && !data.name.toLowerCase().includes(searchTerm) && !itemId.toLowerCase().includes(searchTerm)) continue;
+
+    // Find best sell price (highest)
+    let bestSell = null, bestSellStation = '';
+    for (const s of data.stations) {
+      if (s.sell != null && (bestSell === null || s.sell > bestSell)) {
+        bestSell = s.sell;
+        bestSellStation = `${s.stationName} (${s.sysName})`;
+      }
+    }
+
+    // Find cheapest buy price (lowest)
+    let bestBuy = null, bestBuyStation = '';
+    for (const s of data.stations) {
+      if (s.buy != null && s.buy > 0 && (bestBuy === null || s.buy < bestBuy)) {
+        bestBuy = s.buy;
+        bestBuyStation = `${s.stationName} (${s.sysName})`;
+      }
+    }
+
+    const spread = (bestSell != null && bestBuy != null) ? bestSell - bestBuy : null;
+    const spreadColor = spread != null ? (spread > 0 ? 'var(--green)' : spread < 0 ? 'var(--red)' : 'var(--text-dim)') : 'var(--text-dim)';
+
+    html += `<tr>`;
+    html += `<td style="font-weight:500">${esc(data.name)}</td>`;
+    html += `<td class="mkt-sell">${bestSell != null ? bestSell.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="font-size:11px;color:var(--text-dim)">${bestSellStation ? esc(bestSellStation) : '-'}</td>`;
+    html += `<td class="mkt-buy">${bestBuy != null ? bestBuy.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="font-size:11px;color:var(--text-dim)">${bestBuyStation ? esc(bestBuyStation) : '-'}</td>`;
+    html += `<td style="color:${spreadColor};font-weight:500">${spread != null ? (spread > 0 ? '+' : '') + spread.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="text-align:center">${data.stations.length}</td>`;
+    html += `</tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
 }
 
 function renderMapStats() {
@@ -2848,6 +3237,237 @@ function renderMapStats() {
     <span>Stations: <span class="stat-val">${totalStations}</span></span>
     <span>Ores: <span class="stat-val">${totalOres.size}</span></span>
   `;
+}
+
+// ── System Map SVG ──────────────────────────────────────────
+
+const POI_COLORS = {
+  sun: '#ffd740', station: '#4fc3f7', asteroid_belt: '#ff9800', asteroid: '#ff9800',
+  nebula: '#ce93d8', gas_cloud: '#80cbc4', ice_field: '#b3e5fc', gate: '#69f0ae',
+  planet: '#66bb6a', wreck: '#78909c', anomaly: '#ff5252'
+};
+
+function openSystemMap(sysId) {
+  const sys = mapData[sysId];
+  if (!sys) return;
+
+  const overlay = document.getElementById('systemMapOverlay');
+  const title = document.getElementById('systemMapTitle');
+  const wrap = document.getElementById('systemMapSvgWrap');
+  const legend = document.getElementById('systemMapLegend');
+  if (!overlay || !wrap) return;
+
+  title.textContent = `${sys.name || sysId} System Map`;
+  overlay.style.display = 'flex';
+
+  const pois = (sys.pois || []);
+
+  // Find bot positions in this system
+  const botsHere = bots.filter(b => b.system === sysId);
+  const botPois = new Set(botsHere.map(b => b.poi));
+
+  // Check if POIs have position data
+  const withPos = pois.filter(p => p.position && (p.position.x !== undefined));
+
+  if (withPos.length === 0) {
+    // No position data — generate a circular layout
+    const count = pois.length;
+    const radius = 4;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
+      // Sun at center if present
+      const t = (pois[i].type || '').toLowerCase();
+      if (t === 'sun' || t === 'star') {
+        pois[i]._x = 0;
+        pois[i]._y = 0;
+      } else {
+        pois[i]._x = radius * Math.cos(angle);
+        pois[i]._y = radius * Math.sin(angle);
+      }
+    }
+  } else {
+    for (const p of pois) {
+      if (p.position) {
+        p._x = p.position.x;
+        p._y = p.position.y;
+      } else {
+        p._x = 0;
+        p._y = 0;
+      }
+    }
+  }
+
+  // Compute bounding box
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pois) {
+    if (p._x < minX) minX = p._x;
+    if (p._x > maxX) maxX = p._x;
+    if (p._y < minY) minY = p._y;
+    if (p._y > maxY) maxY = p._y;
+  }
+  if (pois.length <= 1) { minX = -5; maxX = 5; minY = -5; maxY = 5; }
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const spanX = Math.max(maxX - minX, 1);
+  const spanY = Math.max(maxY - minY, 1);
+  const pad = 0.2;
+  const halfX = spanX / 2 * (1 + pad);
+  const halfY = spanY / 2 * (1 + pad);
+  const s = Math.max(halfX, halfY);
+  const sw = s * 0.008;
+
+  const vx = cx - halfX;
+  const vy = cy - halfY;
+  const vw = halfX * 2;
+  const vh = halfY * 2;
+
+  // Deterministic hash for asteroid scatter
+  function hash(a, b) {
+    const h = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return h - Math.floor(h);
+  }
+
+  function dotR(type) {
+    switch (type) {
+      case 'sun': case 'star': return s * 0.07;
+      case 'planet': return s * 0.045;
+      case 'station': return s * 0.036;
+      case 'nebula': return s * 0.055;
+      case 'gas_cloud': return s * 0.05;
+      case 'ice_field': return s * 0.045;
+      default: return s * 0.036;
+    }
+  }
+
+  let svg = `<svg viewBox="${vx} ${vy} ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Defs
+  svg += `<defs>
+    <filter id="sm-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="${s * 0.015}" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="sm-sun-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="${s * 0.03}" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="sm-planet-grad" cx="35%" cy="35%">
+      <stop offset="0%" stop-color="#a5d6a7"/><stop offset="100%" stop-color="#2e7d32"/>
+    </radialGradient>
+    <radialGradient id="sm-ice-grad" cx="40%" cy="35%">
+      <stop offset="0%" stop-color="#e1f5fe"/><stop offset="100%" stop-color="#4fc3f7"/>
+    </radialGradient>
+  </defs>`;
+
+  // Orbit circles
+  const orbits = new Set();
+  for (const p of pois) {
+    const r = Math.sqrt(p._x * p._x + p._y * p._y);
+    if (r > 0.01) orbits.add(r.toFixed(3));
+  }
+  for (const rStr of orbits) {
+    const r = parseFloat(rStr);
+    svg += `<circle cx="0" cy="0" r="${r}" fill="none" stroke="rgba(79,195,247,0.12)" stroke-width="${sw * 0.5}" stroke-dasharray="${s * 0.02} ${s * 0.015}"/>`;
+  }
+
+  // Crosshair at origin
+  svg += `<line x1="${-s*0.02}" y1="0" x2="${s*0.02}" y2="0" stroke="rgba(79,195,247,0.2)" stroke-width="${sw*0.3}"/>`;
+  svg += `<line x1="0" y1="${-s*0.02}" x2="0" y2="${s*0.02}" stroke="rgba(79,195,247,0.2)" stroke-width="${sw*0.3}"/>`;
+
+  // POIs
+  const usedTypes = new Set();
+  for (const p of pois) {
+    const x = p._x;
+    const y = p._y;
+    const t = (p.type || '').toLowerCase();
+    const color = POI_COLORS[t] || '#b0bec5';
+    const r = dotR(t);
+    const isHere = botPois.has(p.id);
+    usedTypes.add(t);
+
+    // Bot highlight ring
+    if (isHere) {
+      svg += `<circle cx="${x}" cy="${y}" r="${r + s * 0.012}" fill="none" stroke="#4caf50" stroke-width="${sw * 0.96}" filter="url(#sm-glow)">`;
+      svg += `<animate attributeName="stroke-opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>`;
+      svg += `</circle>`;
+    }
+
+    // POI visuals by type
+    if (t === 'sun' || t === 'star') {
+      svg += `<circle cx="${x}" cy="${y}" r="${r * 1.4}" fill="#ffd740" opacity="0.15" filter="url(#sm-sun-glow)"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="#ffd740" opacity="0.9" filter="url(#sm-sun-glow)">`;
+      svg += `<animate attributeName="opacity" values="0.9;0.7;0.9" dur="4s" repeatCount="indefinite"/></circle>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${r * 0.55}" fill="#fff8e1" opacity="0.7"/>`;
+    } else if (t === 'station' || p.has_base) {
+      const fc = isHere ? '#4caf50' : '#4fc3f7';
+      const sc = isHere ? '#81c784' : '#b3e5fc';
+      svg += `<polygon points="${x},${y-r} ${x+r},${y} ${x},${y+r} ${x-r},${y}" fill="${fc}" opacity="0.9" stroke="${sc}" stroke-width="${sw*0.4}"/>`;
+      const ir = r * 0.4;
+      svg += `<polygon points="${x},${y-ir} ${x+ir},${y} ${x},${y+ir} ${x-ir},${y}" fill="none" stroke="${isHere?'#c8e6c9':'#e1f5fe'}" stroke-width="${sw*0.25}" opacity="0.6"/>`;
+    } else if (t === 'planet') {
+      svg += `<circle cx="${x}" cy="${y}" r="${r*1.12}" fill="none" stroke="rgba(102,187,106,0.2)" stroke-width="${sw*0.6}"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="${isHere?'#4caf50':'url(#sm-planet-grad)'}" opacity="0.9" stroke="${isHere?'#81c784':'rgba(255,255,255,0.15)'}" stroke-width="${sw*0.3}"/>`;
+    } else if (t === 'nebula') {
+      svg += `<circle cx="${x+r*0.2}" cy="${y-r*0.15}" r="${r*0.8}" fill="#ce93d8" opacity="0.15"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${r*0.6}" fill="${isHere?'#4caf50':'#ce93d8'}" opacity="0.7"/>`;
+    } else if (t === 'gas_cloud') {
+      svg += `<ellipse cx="${x}" cy="${y}" rx="${r*0.8}" ry="${r*0.55}" fill="#4db6ac" opacity="0.2"/>`;
+      svg += `<ellipse cx="${x}" cy="${y}" rx="${r*0.5}" ry="${r*0.35}" fill="${isHere?'#4caf50':'#b2dfdb'}" opacity="0.6"/>`;
+    } else if (t === 'ice_field') {
+      svg += `<circle cx="${x}" cy="${y}" r="${r*0.9}" fill="${isHere?'#4caf50':'url(#sm-ice-grad)'}" opacity="0.8" stroke="#b3e5fc" stroke-width="${sw*0.3}"/>`;
+    } else if (t.includes('asteroid') || t.includes('belt')) {
+      // Scatter rocks along orbit
+      const orbitR = Math.sqrt(x*x + y*y);
+      if (orbitR > 0.01) {
+        const rockCount = 40;
+        const baseR = s * 0.007;
+        for (let i = 0; i < rockCount; i++) {
+          const angle = (i / rockCount) * Math.PI * 2;
+          const radVar = hash(i, orbitR) * 0.06 - 0.03;
+          const rr = orbitR * (1 + radVar);
+          const aJit = (hash(i * 3.1, orbitR * 7.3) - 0.5) * (Math.PI * 2 / rockCount) * 0.6;
+          const rx = rr * Math.cos(angle + aJit);
+          const ry = rr * Math.sin(angle + aJit);
+          const sizeFactor = 0.4 + hash(i * 43.3, orbitR * 17.1) * 0.6;
+          const opacity = 0.4 + hash(i * 73.7, orbitR * 53.3) * 0.5;
+          svg += `<circle cx="${rx}" cy="${ry}" r="${baseR * sizeFactor}" fill="${isHere?'#4caf50':'#ff9800'}" opacity="${opacity}"/>`;
+        }
+      } else {
+        svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="${isHere?'#4caf50':color}" opacity="0.85"/>`;
+      }
+    } else if (t.includes('gate') || t.includes('jump')) {
+      svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${isHere?'#4caf50':'#69f0ae'}" stroke-width="${sw*0.6}" opacity="0.8"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${r*0.5}" fill="${isHere?'#4caf50':'#69f0ae'}" opacity="0.6"/>`;
+    } else {
+      svg += `<circle cx="${x}" cy="${y}" r="${r}" fill="${isHere?'#4caf50':color}" opacity="0.85" stroke="${isHere?'#81c784':'rgba(255,255,255,0.15)'}" stroke-width="${sw*0.4}"/>`;
+    }
+
+    // Label
+    const labelColor = isHere ? '#81c784' : '#78909c';
+    svg += `<text x="${x}" y="${y + r + s * 0.03}" text-anchor="middle" dominant-baseline="hanging" fill="${labelColor}" font-size="${s * 0.035}" font-family="sans-serif" style="pointer-events:none">${esc(p.name || p.id)}</text>`;
+  }
+
+  svg += `</svg>`;
+  wrap.innerHTML = svg;
+
+  // Legend
+  const legendTypes = { sun: 'Sun', station: 'Station', planet: 'Planet', asteroid_belt: 'Asteroid Belt', nebula: 'Nebula', gas_cloud: 'Gas Cloud', ice_field: 'Ice Field', gate: 'Jump Gate' };
+  let legHtml = '';
+  for (const [type, label] of Object.entries(legendTypes)) {
+    if (usedTypes.has(type) || (type === 'asteroid_belt' && usedTypes.has('asteroid'))) {
+      legHtml += `<span class="sml-item"><span class="sml-dot" style="background:${POI_COLORS[type] || '#b0bec5'}"></span>${label}</span>`;
+    }
+  }
+  if (botsHere.length > 0) {
+    legHtml += `<span class="sml-item"><span class="sml-dot" style="background:#4caf50;box-shadow:0 0 4px #4caf50"></span>Bot here (${botsHere.map(b => b.username).join(', ')})</span>`;
+  }
+  legend.innerHTML = legHtml;
+}
+
+function closeSystemMap() {
+  const overlay = document.getElementById('systemMapOverlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 function buildOreFilters() {
@@ -3012,6 +3632,7 @@ function renderMap() {
     if (pirates.length) html += `<span style="color:var(--red)">${pirates.length} pirate${pirates.length !== 1 ? 's' : ''}</span>`;
     html += `</div>`;
     html += `<span class="sys-updated">${timeAgo(sys.last_updated)}</span>`;
+    html += `<button class="sm" style="margin-left:6px;font-size:10px;padding:2px 8px" onclick="event.stopPropagation();openSystemMap('${esc(sysId)}')">Map</button>`;
     html += `</div>`;
 
     // Body
@@ -3182,7 +3803,7 @@ function renderMinerSettings(panel) {
   const cargoThreshold = miner.cargoThreshold ?? 80;
   const refuelThreshold = miner.refuelThreshold ?? 50;
   const repairThreshold = miner.repairThreshold ?? 40;
-  const sellOre = miner.sellOre ?? false;
+  const depositMode = miner.depositMode || (miner.sellOre ? 'sell' : 'storage');
   const targetOre = miner.targetOre || '';
 
   const systemOpts = ['<option value="">(current system)</option>'];
@@ -3210,17 +3831,42 @@ function renderMinerSettings(panel) {
     botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
   }
 
+  // Per-bot ore overrides
+  const minerBots = bots.filter(b => b.routine === 'miner');
+  let perBotHtml = '';
+  if (minerBots.length > 0) {
+    perBotHtml = `
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+      <div class="setting-label" style="margin-bottom:8px">Per-Bot Target Ore</div>
+      <div class="setting-hint" style="margin-bottom:8px">Override the default target ore for individual miners. Leave as "(use default)" to use the global setting above.</div>`;
+    for (const bot of minerBots) {
+      const botOre = (settings[bot.username] || {}).targetOre || '';
+      perBotHtml += `
+      <div class="setting-row" style="margin-bottom:4px">
+        <div class="setting-label" style="min-width:120px;font-size:12px">${esc(bot.username)}</div>
+        <select id="set-miner-botore-${esc(bot.username)}" data-bot="${esc(bot.username)}" class="miner-bot-ore-select">
+          <option value="">(use default)</option>
+          ${knownOres.map(o => `<option value="${esc(o.item_id)}"${o.item_id === botOre ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}
+          ${botOre && !knownOres.find(o => o.item_id === botOre) ? `<option value="${esc(botOre)}" selected>${esc(botOre)}</option>` : ''}
+        </select>
+      </div>`;
+    }
+    perBotHtml += '</div>';
+  }
+
   panel.innerHTML = `
     <h3>Miner Settings</h3>
     <div class="settings-desc">Configure how mining bots operate. Changes apply to all bots started with the Miner routine.</div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Target Ore</div>
+        <div class="setting-label">Target Ore (default)</div>
         <div class="setting-hint">Seek out a specific ore type. Bot will travel to the best known location on the map, mine it, and return home. Requires Explorer to have mapped ore locations first.</div>
       </div>
       <select id="set-miner-targetOre">${oreOpts.join('')}</select>
     </div>
+
+    ${perBotHtml}
 
     <div class="setting-row">
       <div>
@@ -3240,12 +3886,13 @@ function renderMinerSettings(panel) {
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Sell Ore at Station</div>
-        <div class="setting-hint">Sell ore for credits instead of depositing to storage.</div>
+        <div class="setting-label">Deposit Mode</div>
+        <div class="setting-hint">What to do with ore when returning to station.</div>
       </div>
-      <select id="set-miner-sellOre">
-        <option value="false"${!sellOre ? ' selected' : ''}>No (deposit to storage)</option>
-        <option value="true"${sellOre ? ' selected' : ''}>Yes (sell for credits)</option>
+      <select id="set-miner-depositMode">
+        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
+        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
+        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
       </select>
     </div>
 
@@ -3284,12 +3931,23 @@ function saveMinerSettings() {
     targetOre: document.getElementById('set-miner-targetOre').value,
     system: document.getElementById('set-miner-system').value,
     depositBot: document.getElementById('set-miner-depositBot').value,
-    sellOre: document.getElementById('set-miner-sellOre').value === 'true',
+    depositMode: document.getElementById('set-miner-depositMode').value,
+    sellOre: document.getElementById('set-miner-depositMode').value === 'sell',
     cargoThreshold: parseInt(document.getElementById('set-miner-cargoThreshold').value) || 80,
     refuelThreshold: parseInt(document.getElementById('set-miner-refuelThreshold').value) || 50,
     repairThreshold: parseInt(document.getElementById('set-miner-repairThreshold').value) || 40,
   };
   send({ type: 'saveSettings', routine: 'miner', settings: s });
+
+  // Save per-bot ore overrides
+  const selects = document.querySelectorAll('.miner-bot-ore-select');
+  for (const sel of selects) {
+    const botName = sel.dataset.bot;
+    const oreVal = sel.value;
+    if (!settings[botName]) settings[botName] = {};
+    settings[botName].targetOre = oreVal;
+    send({ type: 'saveSettings', routine: botName, settings: { targetOre: oreVal } });
+  }
 }
 
 // ── Crafter Settings ────────────────────────────────────────
@@ -5014,6 +5672,749 @@ function saveExplorerSettings() {
   };
   send({ type: 'saveSettings', routine: 'explorer', settings: s });
   settings.explorer = s;
+}
+
+// ── Shipyard ────────────────────────────────────────────────
+let shipyardSelectedBot = null;
+let shipyardActivePanel = 'overview';
+let shipyardShipData = null;
+let shipyardFleetData = null;
+let shipyardCatalogData = null;
+
+function renderShipyardPage() {
+  renderShipyardSidebar();
+  if (shipyardSelectedBot) {
+    fetchShipDetails(shipyardSelectedBot);
+  } else {
+    document.getElementById('shipyardContent').innerHTML =
+      '<div class="faction-no-data">Select a bot to manage ships.</div>';
+  }
+}
+
+function renderShipyardSidebar() {
+  const body = document.getElementById('shipyardSidebarBody');
+  if (!body) return;
+  let html = '';
+  for (const bot of bots) {
+    const active = shipyardSelectedBot === bot.username ? ' active' : '';
+    html += `<button class="faction-nav-btn${active}" onclick="selectShipyardBot('${esc(bot.username)}')">${esc(bot.username)}</button>`;
+  }
+  if (bots.length === 0) {
+    html = '<div class="faction-no-data">No bots available</div>';
+  }
+  body.innerHTML = html;
+}
+
+function selectShipyardBot(username) {
+  shipyardSelectedBot = username;
+  shipyardShipData = null;
+  shipyardFleetData = null;
+  shipyardActivePanel = 'overview';
+  renderShipyardSidebar();
+  fetchShipDetails(username);
+}
+
+function fetchShipDetails(username) {
+  const content = document.getElementById('shipyardContent');
+  content.innerHTML = '<div class="faction-no-data">Loading ship data...</div>';
+  sendExec(username, 'get_ship', undefined, (result) => {
+    if (shipyardSelectedBot !== username) return;
+    if (!result.ok || !result.data) {
+      shipyardShipData = null;
+      content.innerHTML = `<div class="faction-no-data">${esc(result.error || 'Could not load ship data')}</div>`;
+      return;
+    }
+    shipyardShipData = result.data;
+    renderShipyardContent(username);
+  });
+}
+
+function renderShipyardContent(username) {
+  const content = document.getElementById('shipyardContent');
+  const panels = ['overview', 'fleet', 'shipyard', 'modules'];
+  const panelNav = panels.map(p => {
+    const active = shipyardActivePanel === p ? ' active' : '';
+    const label = p.charAt(0).toUpperCase() + p.slice(1);
+    return `<button class="faction-nav-btn${active}" style="display:inline-block;width:auto;padding:5px 12px;font-size:11px" onclick="switchShipyardPanel('${p}')">${label}</button>`;
+  }).join('');
+
+  let panelHtml = '';
+  switch (shipyardActivePanel) {
+    case 'overview':
+      panelHtml = renderShipOverview(shipyardShipData, username);
+      break;
+    case 'fleet':
+      panelHtml = '<div class="faction-no-data">Loading fleet...</div>';
+      break;
+    case 'shipyard':
+      panelHtml = '<div class="faction-no-data">Loading catalog...</div>';
+      break;
+    case 'modules':
+      panelHtml = renderModulesPanel(shipyardShipData, username);
+      break;
+  }
+
+  const bot = bots.find(b => b.username === username);
+  const credits = bot ? num(bot.credits) : '?';
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:700;color:var(--text-bright)">${esc(username)}</div>
+      <span style="font-size:12px;color:var(--text-dim)">${credits} cr</span>
+    </div>
+    <div class="shipyard-panel-nav">${panelNav}</div>
+    ${panelHtml}
+  `;
+
+  // Lazy-load fleet and catalog panels after rendering nav
+  if (shipyardActivePanel === 'fleet') fetchFleetList(username);
+  if (shipyardActivePanel === 'shipyard') fetchShipCatalog(username);
+}
+
+function switchShipyardPanel(panel) {
+  shipyardActivePanel = panel;
+  if (shipyardSelectedBot) renderShipyardContent(shipyardSelectedBot);
+}
+
+// ── Overview panel ──────────────────────────────────────────
+
+/** Deep-search a ship object for arrays of module-like objects. */
+function findModules(ship) {
+  // Try direct known keys first
+  const directKeys = ['modules', 'installed_modules', 'fitted_modules', 'loadout',
+    'fitted', 'mods', 'equipment', 'fittings'];
+  for (const k of directKeys) {
+    if (Array.isArray(ship[k]) && ship[k].length > 0) return ship[k];
+  }
+  // Search one level deep for arrays of objects with module-like fields
+  for (const [key, val] of Object.entries(ship)) {
+    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object' && val[0] !== null) {
+      const first = val[0];
+      if (first.module_id || first.module_name || first.slot_type || first.slot ||
+          first.instance_id || first.module_instance_id ||
+          (first.name && (first.cpu !== undefined || first.power !== undefined))) {
+        return val;
+      }
+    }
+  }
+  return [];
+}
+
+function renderShipOverview(data, username) {
+  if (!data) return '<div class="faction-no-data">No ship data available</div>';
+
+  const ship = data.ship || data;
+  const name = ship.name || ship.ship_name || '?';
+  const cls = ship.class || ship.ship_class || '';
+  const tier = ship.tier || '';
+  const hull = ship.hull ?? ship.current_hull ?? '?';
+  const maxHull = ship.max_hull ?? ship.hull_max ?? hull;
+  const shield = ship.shield ?? ship.current_shield ?? '?';
+  const maxShield = ship.max_shield ?? ship.shield_max ?? shield;
+  const fuel = ship.fuel ?? ship.current_fuel ?? '?';
+  const maxFuel = ship.max_fuel ?? ship.fuel_max ?? fuel;
+  const cargo = ship.cargo_used ?? ship.cargo ?? 0;
+  const maxCargo = ship.cargo_capacity ?? ship.max_cargo ?? ship.cargo_max ?? cargo;
+  const speed = ship.speed ?? '?';
+  const armor = ship.armor ?? '?';
+  const cpu = ship.cpu_used ?? 0;
+  const maxCpu = ship.cpu_capacity ?? ship.max_cpu ?? 0;
+  const power = ship.power_used ?? 0;
+  const maxPower = ship.power_capacity ?? ship.max_power ?? 0;
+  const primary = ship.primary_color || ship.colors?.primary || '#58a6ff';
+  const secondary = ship.secondary_color || ship.colors?.secondary || '#8b949e';
+
+  const hullPct = maxHull > 0 ? Math.round((hull / maxHull) * 100) : 0;
+  const shieldPct = maxShield > 0 ? Math.round((shield / maxShield) * 100) : 0;
+  const fuelPct = maxFuel > 0 ? Math.round((fuel / maxFuel) * 100) : 0;
+  const cargoPct = maxCargo > 0 ? Math.round((cargo / maxCargo) * 100) : 0;
+  const cpuPct = maxCpu > 0 ? Math.round((cpu / maxCpu) * 100) : 0;
+  const powerPct = maxPower > 0 ? Math.round((power / maxPower) * 100) : 0;
+
+  function bar(pct, color) {
+    return `<div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+  }
+
+  // Module slots — deep-search for arrays of module-like objects
+  const modules = findModules(ship);
+  const slots = ship.slots || ship.module_slots || {};
+  let slotsHtml = '';
+  if (modules.length > 0) {
+    slotsHtml = '<div class="shipyard-slots">';
+    for (const m of modules) {
+      const mName = m.name || m.module_name || m.id || '?';
+      const mType = m.type || m.slot_type || m.category || m.slot || '';
+      slotsHtml += `<div class="shipyard-slot">
+        <div class="slot-type">${esc(mType)}</div>
+        <div class="slot-name">${esc(mName)}</div>
+      </div>`;
+    }
+    slotsHtml += '</div>';
+  } else {
+    // Show empty slots from slot counts
+    const slotTypes = Object.entries(slots);
+    if (slotTypes.length > 0) {
+      slotsHtml = '<div class="shipyard-slots">';
+      for (const [type, count] of slotTypes) {
+        for (let i = 0; i < Number(count); i++) {
+          slotsHtml += `<div class="shipyard-slot">
+            <div class="slot-type">${esc(type)}</div>
+            <div class="slot-empty">Empty</div>
+          </div>`;
+        }
+      }
+      slotsHtml += '</div>';
+    } else {
+      slotsHtml = '<div class="faction-no-data">No modules or slots found</div>';
+    }
+  }
+
+  // Raw data dump for debugging
+  const rawJson = JSON.stringify(data, null, 2);
+
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">${esc(name)} ${tier ? `<span class="count-badge">T${esc(String(tier))}</span>` : ''} ${cls ? `<span style="color:var(--text-dim);font-size:11px;font-weight:400">${esc(cls)}</span>` : ''}</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <span style="font-size:11px;color:var(--text-dim)">Colors:</span>
+        <input type="color" class="shipyard-color-preview" id="sy-color-primary" value="${esc(primary)}" title="Primary">
+        <input type="color" class="shipyard-color-preview" id="sy-color-secondary" value="${esc(secondary)}" title="Secondary">
+        <button class="sm" onclick="shipSetColors('${esc(username)}')">Apply</button>
+      </div>
+      <div class="shipyard-stat-grid">
+        <span class="ssl">Hull</span><span class="ssv">${hull} / ${maxHull} ${bar(hullPct, 'var(--green)')}</span>
+        <span class="ssl">Shield</span><span class="ssv">${shield} / ${maxShield} ${bar(shieldPct, 'var(--cyan)')}</span>
+        <span class="ssl">Fuel</span><span class="ssv">${fuel} / ${maxFuel} ${bar(fuelPct, 'var(--yellow)')}</span>
+        <span class="ssl">Cargo</span><span class="ssv">${cargo} / ${maxCargo} ${bar(cargoPct, 'var(--orange)')}</span>
+        <span class="ssl">Speed</span><span class="ssv">${speed}</span>
+        <span class="ssl">Armor</span><span class="ssv">${armor}</span>
+        <span class="ssl">CPU</span><span class="ssv">${cpu} / ${maxCpu} ${bar(cpuPct, 'var(--magenta)')}</span>
+        <span class="ssl">Power</span><span class="ssv">${power} / ${maxPower} ${bar(powerPct, 'var(--accent)')}</span>
+      </div>
+    </div>
+    <div class="faction-section" style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="sm" onclick="shipRepair('${esc(username)}')">Repair</button>
+      <button class="sm" onclick="shipRefuel('${esc(username)}')">Refuel</button>
+    </div>
+    <div class="faction-section"><div class="faction-section-title">Modules</div>${slotsHtml}</div>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--text-dim)">Raw Ship Data</summary>
+      <pre style="font-size:10px;color:var(--text-dim);white-space:pre-wrap;margin-top:6px;max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid #21262d;border-radius:4px;padding:8px">${esc(rawJson)}</pre>
+    </details>
+  `;
+}
+
+// ── Fleet panel ─────────────────────────────────────────────
+function fetchFleetList(username) {
+  sendExec(username, 'list_ships', undefined, (result) => {
+    if (shipyardSelectedBot !== username || shipyardActivePanel !== 'fleet') return;
+    if (!result.ok || !result.data) {
+      shipyardFleetData = [];
+      renderFleetInline(username, [], result.error);
+      return;
+    }
+    const d = result.data;
+    const ships = Array.isArray(d) ? d : (d.ships || d.owned_ships || []);
+    shipyardFleetData = ships;
+    renderFleetInline(username, ships);
+  });
+}
+
+function renderFleetInline(username, ships, error) {
+  // Find panel body — it's the last child content area after the nav
+  const content = document.getElementById('shipyardContent');
+  const panelBody = content?.querySelector('.sy-panel-body');
+  if (!panelBody) {
+    // Fallback: re-render full content
+    renderFleetPanel(ships, username, error);
+    return;
+  }
+  panelBody.innerHTML = renderFleetPanel(ships, username, error);
+}
+
+function renderFleetPanel(ships, username, error) {
+  let html = '';
+  if (error) {
+    html += `<div style="color:var(--red);font-size:11px;margin-bottom:8px">${esc(error)}</div>`;
+  }
+
+  // Determine current active ship
+  const activeShipId = shipyardShipData?.ship?.id || shipyardShipData?.ship?.ship_id ||
+    shipyardShipData?.id || shipyardShipData?.ship_id || null;
+
+  if (!ships || ships.length === 0) {
+    html += '<div class="faction-no-data">No ships owned</div>';
+  } else {
+    for (const s of ships) {
+      const id = s.id || s.ship_id || '';
+      const name = s.name || s.ship_name || 'Unnamed';
+      const cls = s.class || s.ship_class || '';
+      const rawLoc = s.location || s.system || '';
+      const loc = resolveLocation(rawLoc) || rawLoc;
+      const docked = s.docked ? 'Docked' : (s.status || '');
+      const isActive = id === activeShipId || s.active;
+
+      html += `<div class="shipyard-ship-card">
+        <div>
+          <div class="ssc-name">${esc(name)} ${isActive ? '<span class="shipyard-active-badge">Active</span>' : ''}</div>
+          <div class="ssc-detail">${esc(cls)}${loc ? ` &middot; ${esc(loc)}` : ''}${docked ? ` &middot; ${esc(docked)}` : ''}</div>
+        </div>
+        <div class="ssc-actions">
+          ${!isActive ? `<button class="sm" onclick="shipSwitch('${esc(username)}','${esc(id)}')">Switch</button>` : ''}
+          ${!isActive ? `<button class="sm" style="color:var(--red)" onclick="shipSell('${esc(username)}','${esc(id)}','${esc(name)}')">Sell</button>` : ''}
+        </div>
+      </div>`;
+    }
+  }
+
+  // If called as full re-render (fleet tab lazy load), inject into content
+  const content = document.getElementById('shipyardContent');
+  if (content && shipyardActivePanel === 'fleet') {
+    const bot = bots.find(b => b.username === username);
+    const credits = bot ? num(bot.credits) : '?';
+    const panels = ['overview', 'fleet', 'shipyard', 'modules'];
+    const panelNav = panels.map(p => {
+      const active = shipyardActivePanel === p ? ' active' : '';
+      const label = p.charAt(0).toUpperCase() + p.slice(1);
+      return `<button class="faction-nav-btn${active}" style="display:inline-block;width:auto;padding:5px 12px;font-size:11px" onclick="switchShipyardPanel('${p}')">${label}</button>`;
+    }).join('');
+    content.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <div style="font-size:16px;font-weight:700;color:var(--text-bright)">${esc(username)}</div>
+        <span style="font-size:12px;color:var(--text-dim)">${credits} cr</span>
+      </div>
+      <div class="shipyard-panel-nav">${panelNav}</div>
+      <div class="faction-section"><div class="faction-section-title">Fleet <span class="count-badge">${ships.length}</span></div>${html}</div>
+    `;
+  }
+  return html;
+}
+
+// ── Shipyard (catalog) panel ────────────────────────────────
+function fetchShipCatalog(username) {
+  sendExec(username, 'catalog', { type: 'ships' }, (result) => {
+    if (shipyardSelectedBot !== username || shipyardActivePanel !== 'shipyard') return;
+    if (!result.ok || !result.data) {
+      // Fallback to get_ships
+      sendExec(username, 'get_ships', undefined, (r2) => {
+        if (shipyardSelectedBot !== username || shipyardActivePanel !== 'shipyard') return;
+        const d = r2.ok && r2.data ? r2.data : {};
+        const ships = Array.isArray(d) ? d : (d.ships || d.available || []);
+        shipyardCatalogData = ships;
+        renderCatalogInline(username, ships, r2.ok ? null : (r2.error || 'Could not load catalog'));
+      });
+      return;
+    }
+    const d = result.data;
+    const ships = Array.isArray(d) ? d : (d.ships || d.catalog || d.items || []);
+    shipyardCatalogData = ships;
+    renderCatalogInline(username, ships);
+  });
+}
+
+function renderCatalogInline(username, ships, error) {
+  const content = document.getElementById('shipyardContent');
+  if (!content || shipyardActivePanel !== 'shipyard') return;
+
+  const bot = bots.find(b => b.username === username);
+  const credits = bot ? num(bot.credits) : '?';
+  const panels = ['overview', 'fleet', 'shipyard', 'modules'];
+  const panelNav = panels.map(p => {
+    const active = shipyardActivePanel === p ? ' active' : '';
+    const label = p.charAt(0).toUpperCase() + p.slice(1);
+    return `<button class="faction-nav-btn${active}" style="display:inline-block;width:auto;padding:5px 12px;font-size:11px" onclick="switchShipyardPanel('${p}')">${label}</button>`;
+  }).join('');
+
+  let html = '';
+  if (error) {
+    html += `<div style="color:var(--red);font-size:11px;margin-bottom:8px">${esc(error)}</div>`;
+  }
+
+  // Collect categories for filter
+  const categories = new Set();
+  const tiers = new Set();
+  for (const s of (ships || [])) {
+    if (s.category) categories.add(s.category);
+    if (s.tier) tiers.add(s.tier);
+  }
+
+  if (categories.size > 0 || tiers.size > 0) {
+    html += `<div class="shipyard-filter-bar">
+      <span style="font-size:11px;color:var(--text-dim)">Filter:</span>
+      <select id="sy-cat-filter" onchange="filterCatalog()">
+        <option value="">All Categories</option>
+        ${[...categories].sort().map(c => `<option value="${esc(String(c))}">${esc(String(c))}</option>`).join('')}
+      </select>
+      <select id="sy-tier-filter" onchange="filterCatalog()">
+        <option value="">All Tiers</option>
+        ${[...tiers].sort().map(t => `<option value="${esc(String(t))}">Tier ${esc(String(t))}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+
+  html += `<div id="sy-catalog-list">`;
+  html += renderCatalogCards(ships, username);
+  html += `</div>`;
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:700;color:var(--text-bright)">${esc(username)}</div>
+      <span style="font-size:12px;color:var(--text-dim)">${credits} cr</span>
+    </div>
+    <div class="shipyard-panel-nav">${panelNav}</div>
+    <div class="faction-section"><div class="faction-section-title">Available Ships <span class="count-badge">${(ships || []).length}</span></div>${html}</div>
+  `;
+}
+
+function renderCatalogCards(ships, username) {
+  if (!ships || ships.length === 0) {
+    return '<div class="faction-no-data">No ships available for purchase</div>';
+  }
+
+  // Keys to skip when auto-discovering stats
+  const skipKeys = new Set(['id', 'ship_id', 'class_id', 'name', 'ship_name', 'class', 'ship_class',
+    'tier', 'category', 'price', 'cost', 'buy_price', 'description', 'desc', 'image', 'icon', 'color',
+    'primary_color', 'secondary_color', 'colors']);
+
+  // Friendly labels for common stat keys
+  const statLabels = {
+    hull: 'Hull', max_hull: 'Hull', shield: 'Shield', max_shield: 'Shield',
+    fuel: 'Fuel', max_fuel: 'Fuel', cargo: 'Cargo', cargo_capacity: 'Cargo', max_cargo: 'Cargo',
+    speed: 'Speed', armor: 'Armor', cpu: 'CPU', max_cpu: 'CPU', cpu_capacity: 'CPU',
+    power: 'Power', max_power: 'Power', power_capacity: 'Power',
+    weapon_slots: 'Weapon Slots', defense_slots: 'Defense Slots', utility_slots: 'Utility Slots',
+    mining_bonus: 'Mining Bonus', scan_bonus: 'Scan Bonus', cloak_bonus: 'Cloak Bonus',
+  };
+
+  let html = '';
+  for (const s of ships) {
+    const id = s.id || s.ship_id || s.class_id || '';
+    const name = s.name || s.ship_name || s.class || id || '?';
+    const cls = s.class || s.ship_class || '';
+    const tier = s.tier || '';
+    const category = s.category || '';
+    const price = s.price ?? s.cost ?? s.buy_price ?? '?';
+    const desc = s.description || s.desc || '';
+
+    // Auto-discover all displayable stats
+    const statsArr = [];
+    const seen = new Set();
+    for (const [key, val] of Object.entries(s)) {
+      if (skipKeys.has(key)) continue;
+      if (val === null || val === undefined || val === '') continue;
+      if (typeof val === 'object') {
+        // Handle slots/module_slots objects
+        if (key === 'slots' || key === 'module_slots') {
+          const slotStr = Object.entries(val).map(([k, v]) => `${k}: ${v}`).join(', ');
+          if (slotStr) statsArr.push({ label: 'Slots', value: slotStr });
+        }
+        // Handle requirements/skills
+        if (key === 'requirements' || key === 'skills_required' || key === 'skill_requirements') {
+          const reqArr = Array.isArray(val) ? val : Object.entries(val).map(([k, v]) => ({ name: k, level: v }));
+          for (const r of reqArr) {
+            const rn = r.name || r.skill || r.skill_name || '?';
+            const rl = r.level || r.min_level || '?';
+            statsArr.push({ label: `Req: ${rn}`, value: `Lv${rl}`, color: 'var(--magenta)' });
+          }
+        }
+        continue;
+      }
+      const label = statLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      if (seen.has(label)) continue;
+      seen.add(label);
+      statsArr.push({ label, value: val });
+    }
+
+    const statsHtml = statsArr.map(st =>
+      `<span${st.color ? ` style="color:${st.color}"` : ''}>${esc(st.label)}: ${esc(String(st.value))}</span>`
+    ).join('');
+
+    html += `<div class="shipyard-ship-card" data-category="${esc(String(category))}" data-tier="${esc(String(tier))}">
+      <div style="flex:1">
+        <div class="ssc-name">${esc(name)} ${tier ? `<span class="count-badge">T${esc(String(tier))}</span>` : ''}</div>
+        <div class="ssc-detail">${esc(cls)}${category ? ` &middot; ${esc(category)}` : ''}</div>
+        ${desc ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px">${esc(desc)}</div>` : ''}
+        <div class="ssc-stats">${statsHtml}</div>
+      </div>
+      <div class="ssc-actions" style="flex-direction:column;gap:4px;align-items:flex-end">
+        <span style="font-size:12px;color:var(--yellow);white-space:nowrap">${typeof price === 'number' ? num(price) + ' cr' : esc(String(price))}</span>
+        <div style="display:flex;gap:4px">
+          <button class="sm" onclick="shipCatalogDetails('${esc(username)}','${esc(id)}',this)">Details</button>
+          <button class="primary sm" onclick="shipBuy('${esc(username)}','${esc(id)}',${typeof price === 'number' ? price : 0})">Buy</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function shipCatalogDetails(username, shipId, btn) {
+  // Find or create details container below the card
+  const card = btn.closest('.shipyard-ship-card');
+  if (!card) return;
+  let detailEl = card.querySelector('.sy-detail-expand');
+  if (detailEl) {
+    // Toggle visibility
+    detailEl.style.display = detailEl.style.display === 'none' ? '' : 'none';
+    return;
+  }
+  // Create detail container
+  detailEl = document.createElement('div');
+  detailEl.className = 'sy-detail-expand';
+  detailEl.style.cssText = 'grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid #21262d;font-size:11px;color:var(--text-dim)';
+  detailEl.innerHTML = 'Loading details...';
+  card.style.flexWrap = 'wrap';
+  card.appendChild(detailEl);
+
+  // Fetch detailed info via catalog
+  sendExec(username, 'catalog', { type: 'ships', id: shipId }, (result) => {
+    if (!result.ok || !result.data) {
+      // Try get_ships as fallback and find matching ship
+      sendExec(username, 'get_ships', undefined, (r2) => {
+        if (!r2.ok || !r2.data) {
+          detailEl.innerHTML = `<span style="color:var(--red)">${esc(result.error || 'Could not load details')}</span>`;
+          return;
+        }
+        const d = r2.data;
+        const all = Array.isArray(d) ? d : (d.ships || d.available || []);
+        const match = all.find(s => (s.id || s.ship_id || s.class_id) === shipId);
+        detailEl.innerHTML = match
+          ? `<pre style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(match, null, 2))}</pre>`
+          : 'Ship not found in catalog.';
+      });
+      return;
+    }
+    const d = result.data;
+    // Might be the single ship or an array — find the match
+    let ship = d;
+    if (Array.isArray(d)) {
+      ship = d.find(s => (s.id || s.ship_id || s.class_id) === shipId) || d[0];
+    } else if (d.ships || d.catalog) {
+      const arr = d.ships || d.catalog;
+      ship = arr.find(s => (s.id || s.ship_id || s.class_id) === shipId) || arr[0] || d;
+    }
+    detailEl.innerHTML = `<pre style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(ship, null, 2))}</pre>`;
+  });
+}
+
+function filterCatalog() {
+  const cat = document.getElementById('sy-cat-filter')?.value || '';
+  const tier = document.getElementById('sy-tier-filter')?.value || '';
+  const cards = document.querySelectorAll('#sy-catalog-list .shipyard-ship-card');
+  for (const card of cards) {
+    const cCat = card.getAttribute('data-category') || '';
+    const cTier = card.getAttribute('data-tier') || '';
+    const show = (!cat || cCat === cat) && (!tier || cTier === tier);
+    card.style.display = show ? '' : 'none';
+  }
+}
+
+// ── Modules panel ───────────────────────────────────────────
+function renderModulesPanel(data, username) {
+  if (!data) return '<div class="faction-no-data">No ship data available</div>';
+
+  const ship = data.ship || data;
+  const modules = findModules(ship);
+  const cpu = ship.cpu_used ?? 0;
+  const maxCpu = ship.cpu_capacity ?? ship.max_cpu ?? 0;
+  const power = ship.power_used ?? 0;
+  const maxPower = ship.power_capacity ?? ship.max_power ?? 0;
+  const cpuPct = maxCpu > 0 ? Math.round((cpu / maxCpu) * 100) : 0;
+  const powerPct = maxPower > 0 ? Math.round((power / maxPower) * 100) : 0;
+
+  let html = `<div class="faction-section">
+    <div class="faction-section-title">Resource Budget</div>
+    <div class="shipyard-stat-grid">
+      <span class="ssl">CPU</span><span class="ssv">${cpu} / ${maxCpu} <div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${cpuPct}%;background:var(--magenta)"></div></div></span>
+      <span class="ssl">Power</span><span class="ssv">${power} / ${maxPower} <div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${powerPct}%;background:var(--accent)"></div></div></span>
+    </div>
+  </div>`;
+
+  // Installed modules
+  html += `<div class="faction-section">
+    <div class="faction-section-title">Installed Modules <span class="count-badge">${modules.length}</span></div>`;
+  if (modules.length === 0) {
+    html += '<div class="faction-no-data">No modules installed</div>';
+  } else {
+    html += '<div class="faction-card">';
+    for (const m of modules) {
+      const mName = m.name || m.module_name || m.id || '?';
+      const mType = m.type || m.slot_type || m.category || '';
+      const mId = m.instance_id || m.module_instance_id || m.id || '';
+      const mCpu = m.cpu ?? '';
+      const mPower = m.power ?? '';
+      const detail = [mType, mCpu !== '' ? `CPU: ${mCpu}` : '', mPower !== '' ? `Pwr: ${mPower}` : ''].filter(Boolean).join(' | ');
+      html += `<div class="shipyard-mod-row">
+        <div>
+          <div class="shipyard-mod-name">${esc(mName)}</div>
+          ${detail ? `<div class="shipyard-mod-detail">${esc(detail)}</div>` : ''}
+        </div>
+        <button class="sm" style="color:var(--red)" onclick="shipUninstallMod('${esc(username)}','${esc(mId)}')">Uninstall</button>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Available modules from cargo — fetch and render
+  html += `<div class="faction-section">
+    <div class="faction-section-title">Available from Cargo/Storage</div>
+    <div id="sy-available-mods"><div class="faction-no-data">Loading inventory...</div></div>
+  </div>`;
+
+  // Trigger async fetch for cargo modules
+  setTimeout(() => fetchAvailableMods(username), 0);
+
+  return html;
+}
+
+function fetchAvailableMods(username) {
+  const container = document.getElementById('sy-available-mods');
+  if (!container) return;
+  // get_cargo should return items that include modules
+  sendExec(username, 'get_cargo', undefined, (result) => {
+    if (shipyardSelectedBot !== username || shipyardActivePanel !== 'modules') return;
+    if (!result.ok || !result.data) {
+      container.innerHTML = '<div class="faction-no-data">Could not load cargo</div>';
+      return;
+    }
+    const d = result.data;
+    const items = Array.isArray(d) ? d : (d.items || d.cargo || d.inventory || []);
+    // Filter to module-type items
+    const mods = items.filter(i => {
+      const cat = (i.category || i.type || '').toLowerCase();
+      return cat.includes('module') || cat.includes('mod') || cat.includes('weapon') ||
+        cat.includes('defense') || cat.includes('utility') || cat.includes('equipment');
+    });
+
+    if (mods.length === 0) {
+      // Show all items if no modules detected (game might not categorize)
+      if (items.length > 0) {
+        container.innerHTML = renderCargoModsList(items, username);
+      } else {
+        container.innerHTML = '<div class="faction-no-data">No items in cargo</div>';
+      }
+      return;
+    }
+    container.innerHTML = renderCargoModsList(mods, username);
+  });
+}
+
+function renderCargoModsList(items, username) {
+  let html = '<div class="faction-card">';
+  for (const item of items) {
+    const name = item.name || item.item_name || item.id || '?';
+    const id = item.id || item.item_id || item.module_id || '';
+    const qty = item.quantity ?? item.count ?? 1;
+    const cat = item.category || item.type || '';
+    html += `<div class="shipyard-mod-row">
+      <div>
+        <div class="shipyard-mod-name">${esc(name)} ${qty > 1 ? `<span style="color:var(--text-dim)">x${qty}</span>` : ''}</div>
+        ${cat ? `<div class="shipyard-mod-detail">${esc(cat)}</div>` : ''}
+      </div>
+      <button class="primary sm" onclick="shipInstallMod('${esc(username)}','${esc(id)}')">Install</button>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── Shipyard actions ────────────────────────────────────────
+function shipBuy(username, classId, price) {
+  if (!classId) return;
+  const msg = price > 0 ? `Buy this ship for ${num(price)} credits?` : 'Buy this ship?';
+  if (!confirm(msg)) return;
+  sendExec(username, 'buy_ship', { id: classId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} purchased a new ship!`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Buy ship failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipSell(username, shipId, name) {
+  if (!shipId) return;
+  if (!confirm(`Sell ${name || 'this ship'}? This cannot be undone.`)) return;
+  sendExec(username, 'sell_ship', { id: shipId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} sold ${name || 'a ship'}`);
+      if (shipyardActivePanel === 'fleet') fetchFleetList(username);
+    } else {
+      appendLine('system', `Sell ship failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipSwitch(username, shipId) {
+  if (!shipId) return;
+  sendExec(username, 'switch_ship', { id: shipId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} switched to a different ship`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Switch ship failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipInstallMod(username, modId) {
+  if (!modId) return;
+  sendExec(username, 'install_mod', { id: modId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} installed a module`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Install module failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipUninstallMod(username, modId) {
+  if (!modId) return;
+  sendExec(username, 'uninstall_mod', { id: modId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} uninstalled a module`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Uninstall module failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipRepair(username) {
+  sendExec(username, 'repair', undefined, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: ship repaired`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Repair failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipRefuel(username) {
+  sendExec(username, 'refuel', undefined, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: ship refueled`);
+      fetchShipDetails(username);
+    } else {
+      appendLine('system', `Refuel failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function shipSetColors(username) {
+  const primary = document.getElementById('sy-color-primary')?.value;
+  const secondary = document.getElementById('sy-color-secondary')?.value;
+  if (!primary || !secondary) return;
+  sendExec(username, 'set_colors', { primary, secondary }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: ship colors updated`);
+    } else {
+      appendLine('system', `Set colors failed: ${result.error || 'unknown'}`);
+    }
+  });
 }
 
 // ── Init ───────────────────────────────────────────────────

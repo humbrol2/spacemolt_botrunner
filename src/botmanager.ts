@@ -238,6 +238,7 @@ async function handleExec(action: WebAction): Promise<WebActionResult> {
     "refuel", "repair", "deposit_items", "withdraw_items", "jettison",
     "attack", "loot_wreck", "salvage_wreck", "send_gift", "craft",
     "accept_mission", "complete_mission", "abandon_mission",
+    "buy_ship", "sell_ship", "switch_ship", "install_mod", "uninstall_mod", "set_colors",
   ]);
   if (refreshCommands.has(command)) {
     await bot.refreshStatus();
@@ -263,9 +264,11 @@ async function handleExec(action: WebAction): Promise<WebActionResult> {
   }
 
   if (resp.error) {
+    debugLog("exec:result", `${botName} > ${command} ERROR`, { error: resp.error.message, hasResult: resp.result !== undefined });
     return { ok: false, error: resp.error.message, data: resp.result };
   }
 
+  debugLog("exec:result", `${botName} > ${command} OK`, { hasResult: resp.result !== undefined, resultType: typeof resp.result });
   return { ok: true, message: `${command} executed`, data: resp.result };
 }
 

@@ -2,9 +2,11 @@ import type { Routine, RoutineContext, BotStatus } from "../bot.js";
 import {
   findStation,
   getSystemInfo,
+  collectFromStorage,
   ensureDocked,
   ensureUndocked,
   tryRefuel,
+  ensureFueled,
   navigateToSystem,
   scavengeWrecks,
   readSettings,
@@ -127,11 +129,11 @@ export const rescueRoutine: Routine = async function* (ctx: RoutineContext) {
     await bot.refreshStatus();
     logStatus(ctx);
 
-    const selfFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-    if (selfFuel < settings.refuelThreshold) {
-      ctx.log("system", `Own fuel at ${selfFuel}% — refueling before rescue mission`);
-      await ensureDocked(ctx);
-      await tryRefuel(ctx);
+    const fueled = await ensureFueled(ctx, settings.refuelThreshold);
+    if (!fueled) {
+      ctx.log("error", "Cannot refuel self — waiting before retry...");
+      await sleep(settings.scanIntervalSec * 1000);
+      continue;
     }
 
     // ── Stock up on fuel cells for delivery ──
@@ -235,6 +237,7 @@ export const rescueRoutine: Routine = async function* (ctx: RoutineContext) {
       const dockResp = await bot.exec("dock");
       if (!dockResp.error || dockResp.error.message.includes("already")) {
         bot.docked = true;
+        await collectFromStorage(ctx);
 
         if (hasFuelCells) {
           // Send fuel cells
@@ -293,6 +296,7 @@ export const rescueRoutine: Routine = async function* (ctx: RoutineContext) {
           await bot.exec("travel", { target_poi: station.id });
           await bot.exec("dock");
           bot.docked = true;
+          await collectFromStorage(ctx);
           if (bot.credits >= settings.rescueCredits) {
             await bot.exec("send_gift", {
               recipient: target.username,
@@ -316,8 +320,7 @@ export const rescueRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // ── Refuel self ──
     yield "self_refuel";
-    await ensureDocked(ctx);
-    await tryRefuel(ctx);
+    await ensureFueled(ctx, settings.refuelThreshold);
     await bot.refreshStatus();
     logStatus(ctx);
 

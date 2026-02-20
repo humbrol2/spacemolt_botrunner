@@ -9,10 +9,13 @@ import {
   findStation,
   getSystemInfo,
   parseOreFromMineResult,
+  collectFromStorage,
+  ensureDocked,
   ensureUndocked,
   tryRefuel,
-  refuelAtStation,
-  emergencyFuelRecovery,
+  repairShip,
+  ensureFueled,
+  depositCargoAtHome,
   fetchSecurityLevel,
   scavengeWrecks,
   sleep,
@@ -44,6 +47,72 @@ const RESOURCE_REFRESH_MINS = 120;
 export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
   const { bot } = ctx;
   const visitedSystems = new Set<string>();
+
+  // ── Startup: dock at local station to clear cargo & refuel ──
+  yield "startup_prep";
+  await bot.refreshStatus();
+  const { pois: startPois } = await getSystemInfo(ctx);
+  const startStation = findStation(startPois);
+  if (startStation) {
+    ctx.log("system", `Startup: docking at ${startStation.name} to clear cargo & refuel...`);
+
+    // Travel to station if not already there
+    if (bot.poi !== startStation.id) {
+      await ensureUndocked(ctx);
+      const tResp = await bot.exec("travel", { target_poi: startStation.id });
+      if (tResp.error && !tResp.error.message.includes("already")) {
+        ctx.log("error", `Could not reach station: ${tResp.error.message}`);
+      }
+    }
+
+    // Dock
+    if (!bot.docked) {
+      const dResp = await bot.exec("dock");
+      if (!dResp.error || dResp.error.message.includes("already")) {
+        bot.docked = true;
+      }
+    }
+
+    if (bot.docked) {
+      // Collect gifted credits/items from storage
+      await collectFromStorage(ctx);
+
+      // Deposit non-fuel cargo
+      yield "startup_deposit";
+      const cargoResp = await bot.exec("get_cargo");
+      if (cargoResp.result && typeof cargoResp.result === "object") {
+        const cResult = cargoResp.result as Record<string, unknown>;
+        const cargoItems = (
+          Array.isArray(cResult) ? cResult :
+          Array.isArray(cResult.items) ? (cResult.items as Array<Record<string, unknown>>) :
+          Array.isArray(cResult.cargo) ? (cResult.cargo as Array<Record<string, unknown>>) :
+          []
+        );
+        let deposited = 0;
+        for (const item of cargoItems) {
+          const itemId = (item.item_id as string) || "";
+          const quantity = (item.quantity as number) || 0;
+          if (!itemId || quantity <= 0) continue;
+          const lower = itemId.toLowerCase();
+          if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+          const displayName = (item.name as string) || itemId;
+          ctx.log("trade", `Depositing ${quantity}x ${displayName}...`);
+          await bot.exec("deposit_items", { item_id: itemId, quantity });
+          deposited += quantity;
+        }
+        if (deposited > 0) ctx.log("trade", `Deposited ${deposited} items to storage`);
+      }
+
+      // Refuel
+      yield "startup_refuel";
+      await tryRefuel(ctx);
+      await bot.refreshStatus();
+      const startFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+      ctx.log("system", `Startup complete — Fuel: ${startFuel}% | Cargo: ${bot.cargo}/${bot.cargoMax}`);
+    }
+  } else {
+    ctx.log("system", "No station in current system — skipping startup prep");
+  }
 
   while (bot.state === "running") {
     // ── Get current system data ──
@@ -97,6 +166,33 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       ctx.log("info", "All POIs in this system are up to date — moving on");
     }
 
+    // ── Hull check — repair if <= 40% ──
+    await bot.refreshStatus();
+    const hullPct = bot.maxHull > 0 ? Math.round((bot.hull / bot.maxHull) * 100) : 100;
+    if (hullPct <= 40) {
+      ctx.log("system", `Hull critical (${hullPct}%) — finding station for repair`);
+      const docked = await ensureDocked(ctx);
+      if (docked) {
+        await repairShip(ctx);
+      }
+    }
+
+    // ── Ensure fueled before exploring ──
+    yield "fuel_check";
+    const fueled = await ensureFueled(ctx, FUEL_SAFETY_PCT);
+    if (!fueled) {
+      ctx.log("error", "Could not refuel — waiting 30s before retry...");
+      await sleep(30000);
+      continue;
+    }
+
+    // If hull repair or refueling moved us to a different system, restart the loop
+    await bot.refreshStatus();
+    if (bot.system !== systemId) {
+      ctx.log("info", `Moved to ${bot.system} during repair/refuel — restarting system scan`);
+      continue;
+    }
+
     // ── Undock if docked ──
     await ensureUndocked(ctx);
 
@@ -110,25 +206,20 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       const isMinable = isMinablePoi(poi.type);
       const isStation = isStationPoi(poi);
 
-      // Check fuel before traveling
-      await bot.refreshStatus();
-      const currentFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-      if (currentFuel < FUEL_SAFETY_PCT) {
-        ctx.log("system", `Fuel low (${currentFuel}%) — refueling before continuing`);
-        yield "emergency_refuel";
-        if (station) {
-          const refueled = await refuelAtStation(ctx, station, FUEL_SAFETY_PCT);
-          if (!refueled) {
-            ctx.log("error", "Refuel failed — attempting emergency recovery...");
-            await emergencyFuelRecovery(ctx);
-            break; // restart outer loop to re-assess
-          }
-        } else if (currentFuel < 10) {
-          ctx.log("error", "No station available and fuel critical — emergency recovery...");
-          await emergencyFuelRecovery(ctx);
-          break;
-        }
+      // Check fuel before traveling to each POI
+      yield "fuel_check";
+      const poiFueled = await ensureFueled(ctx, FUEL_SAFETY_PCT);
+      if (!poiFueled) {
+        ctx.log("error", "Could not refuel — restarting system loop...");
+        break;
       }
+      // If refueling moved us to a different system, break out to restart
+      await bot.refreshStatus();
+      if (bot.system !== systemId) {
+        ctx.log("info", `Moved to ${bot.system} during refuel — restarting system scan`);
+        break;
+      }
+      await ensureUndocked(ctx);
 
       yield `visit_${poi.id}`;
       const tag = reason === "new" ? "" : ` [${reason}]`;
@@ -151,6 +242,19 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       } else {
         yield* visitOtherPoi(ctx, systemId, poi);
       }
+
+      // ── Check cargo — if full, return to Sol Central to deposit ──
+      await bot.refreshStatus();
+      if (bot.cargoMax > 0 && bot.cargo >= bot.cargoMax) {
+        yield "deposit_cargo";
+        await depositCargoAtHome(ctx, { fuelThresholdPct: FUEL_SAFETY_PCT, hullThresholdPct: 30 });
+        // After depositing, we're likely in Sol — break to restart system scan
+        await bot.refreshStatus();
+        if (bot.system !== systemId) {
+          ctx.log("info", `Moved to ${bot.system} after deposit — restarting system scan`);
+          break;
+        }
+      }
     }
 
     if (bot.state !== "running") break;
@@ -162,43 +266,12 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
     // ── Pick next system to explore ──
     yield "pick_next_system";
 
-    // ALWAYS refuel before jumping — jumps are expensive
-    await bot.refreshStatus();
-    const jumpFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-    if (jumpFuel < JUMP_FUEL_PCT && station) {
-      ctx.log("system", `Fuel at ${jumpFuel}% — refueling to ${JUMP_FUEL_PCT}% before jump...`);
-      const refueled = await refuelAtStation(ctx, station, JUMP_FUEL_PCT);
-      if (!refueled) {
-        ctx.log("error", "Could not refuel before jump — attempting emergency recovery...");
-        const recovered = await emergencyFuelRecovery(ctx);
-        if (!recovered) {
-          ctx.log("error", "Recovery failed — waiting 15s before retry (scavenge for fuel drops)...");
-          await sleep(15000);
-        }
-        continue; // restart the loop — system may have changed after recovery
-      }
-    } else if (jumpFuel < JUMP_FUEL_PCT && !station) {
-      ctx.log("error", `Fuel at ${jumpFuel}% and no station to refuel — risky jump!`);
-      if (jumpFuel < 15) {
-        ctx.log("error", "Fuel too low to risk a jump — attempting emergency recovery...");
-        const recovered = await emergencyFuelRecovery(ctx);
-        if (!recovered) {
-          ctx.log("error", "Recovery failed — waiting 15s (scavenge for fuel drops)...");
-          await sleep(15000);
-        }
-        continue;
-      }
-    }
-
-    // Verify fuel is actually sufficient after refuel attempt
-    await bot.refreshStatus();
-    const postRefuelFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-    if (postRefuelFuel < 15) {
-      ctx.log("error", `Fuel still critically low (${postRefuelFuel}%) — cannot jump safely`);
-      const recovered = await emergencyFuelRecovery(ctx);
-      if (!recovered) {
-        await sleep(15000);
-      }
+    // ALWAYS ensure fueled before jumping — will navigate to nearest station if needed
+    yield "pre_jump_fuel";
+    const jumpFueled = await ensureFueled(ctx, JUMP_FUEL_PCT);
+    if (!jumpFueled) {
+      ctx.log("error", "Could not refuel before jump — waiting 30s...");
+      await sleep(30000);
       continue;
     }
 
@@ -207,7 +280,15 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
     if (!nextSystem) {
       ctx.log("info", "All connected systems explored! Picking a random connection...");
       if (validConns.length > 0) {
+        // Ensure fuel before random jump
+        const rndFueled = await ensureFueled(ctx, JUMP_FUEL_PCT);
+        if (!rndFueled) {
+          ctx.log("error", "Cannot refuel for random jump — waiting 30s...");
+          await sleep(30000);
+          continue;
+        }
         const random = validConns[Math.floor(Math.random() * validConns.length)];
+        await ensureUndocked(ctx);
         ctx.log("travel", `Jumping to ${random.name || random.id}...`);
         const jumpResp = await bot.exec("jump", { target_system: random.id });
         if (jumpResp.error) {
@@ -221,17 +302,26 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
+    // Final fuel verify before jumping
+    await bot.refreshStatus();
+    const preJumpFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+    if (preJumpFuel < 25) {
+      ctx.log("system", `Fuel too low for jump (${preJumpFuel}%) — refueling first...`);
+      const jf = await ensureFueled(ctx, JUMP_FUEL_PCT);
+      if (!jf) {
+        ctx.log("error", "Cannot refuel — waiting 30s...");
+        await sleep(30000);
+        continue;
+      }
+    }
+
+    await ensureUndocked(ctx);
     ctx.log("travel", `Jumping to ${nextSystem.name || nextSystem.id}...`);
     const jumpResp = await bot.exec("jump", { target_system: nextSystem.id });
     if (jumpResp.error) {
       const msg = jumpResp.error.message.toLowerCase();
       if (msg.includes("fuel")) {
-        ctx.log("error", `Insufficient fuel for jump — need to refuel`);
-        if (station) {
-          await refuelAtStation(ctx, station, JUMP_FUEL_PCT);
-        } else {
-          await emergencyFuelRecovery(ctx);
-        }
+        ctx.log("error", "Insufficient fuel for jump — will refuel next loop");
       } else {
         ctx.log("error", `Jump failed: ${jumpResp.error.message}`);
       }
@@ -319,6 +409,9 @@ async function* scanStation(
   }
   bot.docked = true;
 
+  // Collect gifted credits/items from storage
+  await collectFromStorage(ctx);
+
   // Scan market
   yield `market_${poi.id}`;
   ctx.log("trade", `Scanning market at ${poi.name}...`);
@@ -380,6 +473,33 @@ async function* scanStation(
   const stationFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
   if (stationFuel < 90) {
     await tryRefuel(ctx);
+  }
+
+  // Deposit non-fuel cargo to station storage
+  yield `deposit_${poi.id}`;
+  const cargoResp = await bot.exec("get_cargo");
+  if (cargoResp.result && typeof cargoResp.result === "object") {
+    const cResult = cargoResp.result as Record<string, unknown>;
+    const cargoItems = (
+      Array.isArray(cResult) ? cResult :
+      Array.isArray(cResult.items) ? cResult.items :
+      Array.isArray(cResult.cargo) ? cResult.cargo :
+      []
+    ) as Array<Record<string, unknown>>;
+
+    for (const item of cargoItems) {
+      const itemId = (item.item_id as string) || "";
+      const quantity = (item.quantity as number) || 0;
+      if (!itemId || quantity <= 0) continue;
+      // Keep fuel cells for emergency use
+      const lower = itemId.toLowerCase();
+      if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+
+      const displayName = (item.name as string) || itemId;
+      ctx.log("trade", `Depositing ${quantity}x ${displayName} to storage...`);
+      await bot.exec("deposit_items", { item_id: itemId, quantity });
+      yield "depositing";
+    }
   }
 
   // Undock
