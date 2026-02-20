@@ -1,15 +1,10 @@
 {
-  "name": "@spacemolt/commander",
-  "version": "0.2.1",
+  "name": "spacemolt-botrunner",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "bun run src/commander.ts",
-    "bots": "bun run src/botmanager.ts",
-    "dashboard": "bun run src/botmanager.ts",
-    "build": "bun build src/commander.ts --compile --outfile commander"
-  },
-  "dependencies": {
-    "@mariozechner/pi-ai": "latest"
+    "start": "bun run src/botmanager.ts",
+    "dashboard": "bun run src/botmanager.ts"
   },
   "devDependencies": {
     "bun-types": "^1.3.9",

@@ -1,416 +1,134 @@
-# Commander
+# SpaceMolt Bot Runner
 
-**An autonomous AI agent that plays [SpaceMolt](https://www.spacemolt.com) — the MMO built for LLMs.**
+A web-based bot fleet manager for [SpaceMolt](https://www.spacemolt.com) — run multiple bots with automated routines, monitor everything from a live dashboard.
 
-Give it a mission. Watch it fly.
+![Dashboard](https://img.shields.io/badge/interface-web_dashboard-blue) ![Runtime](https://img.shields.io/badge/runtime-bun-black) ![No Dependencies](https://img.shields.io/badge/deps-zero_runtime-green)
 
-```
-$ commander --model ollama/qwen3:8b "mine ore and get rich"
+## What It Does
 
-09:12:45 [setup] SpaceMolt AI Commander starting...
-09:12:45 [setup] Model: ollama/qwen3:8b
-09:12:45 [setup] No credentials found — agent will need to register
-09:12:48 [tool] register username=VoidDrifter empire=solarian
-09:12:49 [tool] save_credentials username=VoidDrifter password=XXX
-09:12:49 [setup] Credentials saved for VoidDrifter
-09:12:50 [tool] undock
-09:12:51 [tool] get_system
-09:12:52 [tool] travel target_poi=sol_asteroid_belt
-09:13:02 [tool] mine
-09:13:02 [mining] Mined 12 iron ore, 4 copper ore
-09:13:12 [tool] mine
-09:13:12 [mining] Mined 15 iron ore
-09:13:22 [tool] travel target_poi=sol_station_alpha
-09:13:32 [tool] dock
-09:13:33 [tool] sell item_id=iron_ore quantity=27
-09:13:33 [trade] Sold 27 iron ore for 135 credits
-09:13:34 [tool] refuel
-09:13:34 [agent] Fuel topped off. Back to the belt.
-```
+Bot Runner manages a fleet of SpaceMolt bots from a single web dashboard. Each bot runs an automated routine (mining, exploring, crafting, rescue) while you monitor from your browser.
 
-## How It Works
-
-Commander connects an LLM to SpaceMolt's HTTP API through a tool-calling loop. You give it a high-level instruction, and the agent autonomously plays the game — mining, trading, exploring, fighting, chatting with other players, and working toward your goal.
-
-```
-Human Instruction → LLM → Tool Call → SpaceMolt API → Result → LLM → ...
-```
-
-The agent:
-- **Registers** a new account or **logs in** with saved credentials
-- **Executes game actions** via ~50 tools (mine, travel, trade, attack, chat, craft, etc.)
-- **Queries game state** freely (status, cargo, map, nearby players)
-- **Maintains memory** via captain's log and local TODO files
-- **Persists credentials** across sessions
+- **Web Dashboard** — real-time status, logs, and controls at `http://localhost:3000`
+- **4 Routines** — Miner, Explorer, Crafter, Fuel Rescue
+- **Faction Management** — members, storage, facilities, diplomacy, intel
+- **Galaxy Map** — auto-built from explorer data
+- **Manual Control** — execute any game command from the bot profile page
+- **Multi-bot** — run as many bots as you want, each with its own routine
+- **Zero runtime deps** — just Bun
 
 ## Quick Start
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) runtime
-- An LLM provider: [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai) (local), or an API key for Anthropic/OpenAI/Groq/etc.
+- [Bun](https://bun.sh) runtime (v1.0+)
+- A SpaceMolt account — register at [spacemolt.com/dashboard](https://spacemolt.com/dashboard) to get a registration code
 
 ### Install
 
 ```bash
-git clone https://github.com/SpaceMolt/commander.git
-cd commander
+git clone https://github.com/humbrol2/spacemolt_botrunner.git
+cd spacemolt_botrunner
 bun install
 ```
 
 ### Run
 
 ```bash
-# Local model via Ollama
-bun run src/commander.ts --model ollama/qwen3:8b "mine ore and sell it"
-
-# Local model via LM Studio
-bun run src/commander.ts --model lmstudio/qwen2.5-7b-instruct "mine ore and sell it"
-
-# Anthropic
-ANTHROPIC_API_KEY=sk-... bun run src/commander.ts --model anthropic/claude-sonnet-4-20250514 "become a pirate"
-
-# OpenAI
-OPENAI_API_KEY=sk-... bun run src/commander.ts --model openai/gpt-4.1 "explore the galaxy and map every system"
-
-# Groq
-GROQ_API_KEY=gsk-... bun run src/commander.ts --model groq/llama-3.3-70b-versatile "join a faction and dominate"
+bun start
 ```
 
-### Pre-built Binaries
+Open `http://localhost:3000` in your browser. Use `PORT=8080 bun start` for a different port.
 
-Download from [Releases](https://github.com/SpaceMolt/commander/releases) — standalone executables, no Bun required.
+## Dashboard
 
-```bash
-# macOS Apple Silicon
-./commander-macos-arm64 --model ollama/qwen3:8b "mine ore"
+### Bot Table
+All bots at a glance — name, ship, state, credits, fuel, hull/shield, cargo, location. Click a bot name to open its profile.
 
-# Linux
-./commander-linux-x64 --model ollama/qwen3:8b "mine ore"
+### Bot Profile
+Full manual control panel for any bot:
+- Travel, jump, dock/undock
+- Mine, scan, refuel, repair
+- Buy/sell with live market prices
+- Craft with recipe browser
+- Deposit/withdraw station storage
+- Send gifts/credits between bots
+- Custom command input for any API call
+
+### Routines
+
+| Routine | Description |
+|---------|-------------|
+| **Miner** | Mines ore at asteroid belts, returns to station to sell/deposit. Configurable target ore, cargo threshold, sell vs deposit. |
+| **Explorer** | Jumps system to system, visits every POI, surveys resources. Builds the galaxy map. |
+| **Crafter** | Crafts items up to configured stock limits. Add/remove recipes with category picker. |
+| **Fuel Rescue** | Monitors fleet for stranded bots (low fuel), delivers fuel cells or credits. |
+
+All routines include:
+- Auto-refuel and repair at configurable thresholds
+- Wreck scavenging (loot fuel cells and cargo from debris)
+- Emergency fuel recovery (sell cargo, wait for rescue)
+- Auto-collect credits from station storage on dock
+
+### Faction Tab
+Full faction management from the browser:
+- **Overview** — leader, members, treasury, allies/enemies/wars, deposit/withdraw credits
+- **Members** — role management (recruit/member/officer/leader), kick, invite players, quick-invite your other bots with auto-accept
+- **Storage** — view/deposit/withdraw faction items. Detects missing lockbox and offers to build one
+- **Facilities** — list faction facilities at current station, toggle on/off, check upgrades, build new facilities (lockbox, etc.)
+- **Diplomacy** — set ally/enemy, declare war, propose/accept peace
+- **Intel** — query intel by system/player, view intel status, trade intel
+
+### Settings
+Per-routine configuration saved to `data/settings.json`:
+- **Miner** — target ore, mining system, deposit bot, sell ore, cargo/refuel/repair thresholds
+- **Crafter** — recipe list with add/remove + category picker, stock limits, thresholds
+- **Explorer** — max jumps, survey mode, scan POIs, avoid low security, thresholds
+- **Fuel Rescue** — scan interval, fuel trigger %, cells to deliver, credits to send
+
+### Other Tabs
+- **Map** — galaxy map built from explorer data, filterable by security level and resources
+- **Missions** — browse available missions per system, view/claim/complete active missions per bot
+
+## Adding Bots
+
+From the dashboard:
+
+1. **Register New** — enter a registration code from [spacemolt.com/dashboard](https://spacemolt.com/dashboard), pick a username and empire
+2. **Add Existing** — enter username and password for an existing account
+
+Credentials are saved to `sessions/<username>/credentials.json`. Bots auto-discover on restart.
+
+## Project Structure
+
 ```
-
-## Usage
-
-```
-commander --model <provider/model-id> [options] <instruction>
-
-Options:
-  --model, -m <id>       LLM to use (required)
-  --session, -s <name>   Session name for separate credentials/state (default: "default")
-  --file, -f <path>      Read instruction from a file instead of command line
-  --debug, -d            Show LLM call details (token counts, retries, etc.)
-  --url <url>            SpaceMolt API URL (default: production server)
-  --help, -h             Show help
-
-Environment:
-  ANTHROPIC_API_KEY      API key for Anthropic models
-  OPENAI_API_KEY         API key for OpenAI models
-  GROQ_API_KEY           API key for Groq models
-  XAI_API_KEY            API key for xAI models
-  MISTRAL_API_KEY        API key for Mistral models
-  OPENROUTER_API_KEY     API key for OpenRouter models
-  OLLAMA_BASE_URL        Ollama server URL (default: http://localhost:11434/v1)
-  LMSTUDIO_BASE_URL      LM Studio server URL (default: http://localhost:1234/v1)
-  SPACEMOLT_URL          Override game server URL
-```
-
-## Supported Models
-
-Commander uses [`@mariozechner/pi-ai`](https://github.com/badlogic/pi-mono) for multi-provider LLM access. Any model that supports tool calling works.
-
-| Provider | Example | Notes |
-|----------|---------|-------|
-| Ollama | `ollama/qwen3:8b` | Free, local, any GGUF model |
-| LM Studio | `lmstudio/qwen2.5-7b-instruct` | Free, local, GUI model manager |
-| Anthropic | `anthropic/claude-sonnet-4-20250514` | Best tool-calling performance |
-| OpenAI | `openai/gpt-4.1` | Strong tool calling |
-| Groq | `groq/llama-3.3-70b-versatile` | Fast inference |
-| xAI | `xai/grok-2` | |
-| Mistral | `mistral/mistral-large-latest` | |
-| OpenRouter | `openrouter/anthropic/claude-3.5-sonnet` | Access to many models |
-
-## Sessions
-
-Each session maintains its own credentials and state in `sessions/<name>/`:
-
-```
+src/
+  botmanager.ts      Entry point — discovers bots, starts web server, handles actions
+  bot.ts             Bot class — login, exec, status caching, routine runner
+  api.ts             SpaceMolt REST client with session management
+  session.ts         Credential persistence
+  ui.ts              Log routing (bot → web server → browser)
+  debug.ts           Debug logging to data/debug.log
+  mapstore.ts        Galaxy map persistence
+  routines/
+    common.ts        Shared utilities (dock, refuel, travel, scavenge, emergency recovery)
+    miner.ts         Mining routine
+    explorer.ts      Exploration routine
+    crafter.ts       Crafting routine
+    rescue.ts        Fuel rescue routine
+  web/
+    server.ts        Bun.serve HTTP + WebSocket server
+    index.html       Dashboard SPA (vanilla JS, no build step)
+data/
+  settings.json      Persisted routine settings
+  map.json           Galaxy map data
 sessions/
-  default/
-    credentials.json  # Username, password, empire, player ID
-    TODO.md           # Agent's goal tracking
-  pirate/
-    credentials.json  # Different account
-    TODO.md
-```
-
-Run multiple agents with different identities:
-
-```bash
-# Miner agent
-bun run src/commander.ts -m ollama/qwen3:8b -s miner "mine and trade until you can afford a freighter"
-
-# Explorer agent
-bun run src/commander.ts -m ollama/qwen3:8b -s explorer "explore unknown systems and sell maps"
-
-# Pirate agent
-bun run src/commander.ts -m ollama/qwen3:8b -s pirate "hunt miners in low-security systems"
-```
-
-## Architecture
-
-```
-commander.ts     CLI entry point, outer loop, system prompt construction
-    │
-loop.ts          Inner tool-calling loop, LLM retry logic, context compaction
-    │
-tools.ts         ~80 tool definitions + dispatcher (local & remote)
-    │
-api.ts           SpaceMolt REST client (sessions, rate limits, auto-retry)
-model.ts         Model resolution: "provider/model-id" → pi-ai Model
-session.ts       Per-session credential (JSON) and TODO persistence
-ui.ts            ANSI-colored, timestamped terminal output
-```
-
-### Startup
-
-`commander.ts` parses CLI args, loads `PROMPT.md` (the game guide), resolves the LLM model, loads saved credentials and TODO from disk, then constructs a system prompt and enters the outer loop.
-
-```mermaid
-sequenceDiagram
-    participant User as Human (CLI)
-    participant CMD as commander.ts
-    participant Model as model.ts
-    participant Session as session.ts
-    participant API as api.ts
-
-    User->>CMD: commander --model ollama/qwen3:8b "mine ore"
-    CMD->>CMD: parseArgs()
-    CMD->>CMD: Load PROMPT.md (game rules)
-    CMD->>Model: resolveModel("ollama/qwen3:8b")
-    Model-->>CMD: pi-ai Model object
-    CMD->>Session: new SessionManager("default")
-    CMD->>Session: loadCredentials()
-    Session-->>CMD: credentials or null
-    CMD->>API: new SpaceMoltAPI()
-    CMD->>API: setCredentials(username, password)
-    CMD->>CMD: buildSystemPrompt(rules, instruction, creds, todo)
-    CMD->>CMD: Enter outer loop
-```
-
-### Outer Loop
-
-The outer loop in `commander.ts` runs indefinitely. Each iteration calls the inner agent turn, sleeps 2 seconds, pushes a "continue your mission" nudge message, and refreshes the system prompt (re-reading credentials and TODO from disk, so changes the agent made are reflected).
-
-```
-while (running):
-    runAgentTurn(model, context, ...)
-    sleep(2000ms)
-    push "Continue your mission" user message
-    refresh system prompt from disk
-```
-
-Graceful shutdown: first Ctrl+C sets `running = false` and aborts the current LLM call. Second Ctrl+C force-exits.
-
-### Inner Tool-Calling Loop
-
-`loop.ts` runs up to 30 sequential tool-calling rounds per turn. Each round: compact context if needed, call the LLM (with up to 3 retries and exponential backoff), execute any tool calls, push results back into context, and repeat. If the LLM returns no tool calls, the turn ends.
-
-```mermaid
-sequenceDiagram
-    participant Loop as loop.ts
-    participant LLM as LLM (via pi-ai)
-    participant Tools as tools.ts
-    participant API as api.ts
-
-    Loop->>Loop: compactContext() if over token budget
-    Loop->>LLM: completeWithRetry(model, context)
-    LLM-->>Loop: AssistantMessage (text + tool calls)
-
-    alt No tool calls
-        Loop-->>Loop: Turn complete, return
-    else Has tool calls
-        Loop->>Tools: executeTool(name, args)
-        alt Local tool (save_credentials, update_todo, etc.)
-            Tools-->>Loop: result string
-        else Remote tool (mine, travel, attack, etc.)
-            Tools->>API: api.execute(command, payload)
-            API-->>Tools: ApiResponse
-            Tools-->>Loop: result string (truncated to 4000 chars)
-        end
-        Loop->>Loop: Push toolResult to context
-        Loop->>Loop: Next round (up to 30)
-    end
-```
-
-### Context Compaction
-
-Long-running agents will exceed their context window. `compactContext()` monitors token usage (estimated at ~4 chars/token) and triggers when messages exceed 55% of the model's context window. It summarizes older messages via the same LLM, preserving the 10 most recent messages at minimum.
-
-```mermaid
-sequenceDiagram
-    participant Loop as Agent Loop
-    participant Compact as compactContext()
-    participant LLM as Same LLM model
-
-    Loop->>Compact: Check token budget
-    alt Under budget (< 55% of context window)
-        Compact-->>Loop: No-op
-    else Over budget
-        Compact->>Compact: Split messages: old vs. recent (~60% budget)
-        Compact->>Compact: Snap split to turn boundary
-        Compact->>Compact: Format old messages as transcript
-        Compact->>LLM: "Summarize this game session..."
-        Note over LLM: Separate context, 30s timeout, 1024 max tokens
-        LLM-->>Compact: Summary text
-        Compact->>Compact: Replace old messages with single summary message
-        Compact-->>Loop: Context compacted
-    end
-```
-
-### API Session Management
-
-`api.ts` handles the HTTP session lifecycle with the SpaceMolt server. Sessions are created on demand, auto-renewed when expiring (< 60s remaining), and transparently re-established on server-side invalidation. Rate limiting is handled with automatic sleep-and-retry.
-
-```mermaid
-sequenceDiagram
-    participant Tools as tools.ts
-    participant API as SpaceMoltAPI
-    participant Server as game.spacemolt.com
-
-    Tools->>API: execute("mine", {})
-
-    rect rgb(240, 240, 255)
-        Note over API,Server: Session Management
-        API->>Server: POST /api/v1/session
-        Server-->>API: session { id, expiresAt }
-        API->>Server: POST /api/v1/login (if credentials saved)
-        Server-->>API: Logged in
-    end
-
-    API->>Server: POST /api/v1/mine (X-Session-Id header)
-
-    alt rate_limited
-        Server-->>API: { error: rate_limited, wait_seconds: 8 }
-        API->>API: sleep(8s), retry
-    else session_expired
-        API->>API: Re-create session, re-login, retry
-    else Success
-        Server-->>API: { result: { mined: [...] } }
-    end
-
-    API-->>Tools: ApiResponse
-```
-
-### Model Resolution
-
-`model.ts` resolves a `"provider/model-id"` string into a pi-ai `Model` object. Known providers (Anthropic, OpenAI, Groq, xAI, Mistral, OpenRouter) use pi-ai's built-in registry. Unknown providers (Ollama, LM Studio, vLLM) are handled by cloning a Groq model template (which uses the standard OpenAI-compatible `/v1/chat/completions` endpoint) and overriding the base URL.
-
-| Provider | Base URL | API Key |
-|----------|----------|---------|
-| ollama | `http://localhost:11434/v1` (configurable via `OLLAMA_BASE_URL`) | `"local"` (none needed) |
-| lmstudio | `http://localhost:1234/v1` (configurable via `LMSTUDIO_BASE_URL`) | `"local"` |
-| vllm | `http://localhost:8000/v1` | `"local"` |
-| anthropic | pi-ai built-in | `ANTHROPIC_API_KEY` |
-| openai | pi-ai built-in | `OPENAI_API_KEY` |
-| groq | pi-ai built-in | `GROQ_API_KEY` |
-
-### Tools
-
-`tools.ts` defines ~80 tools across 17 categories and dispatches execution. Four tools are **local** (handled by `SessionManager` without hitting the server):
-
-- `save_credentials` — persist login credentials to disk
-- `update_todo` / `read_todo` — agent's task list
-- `status_log` — log a categorized message
-
-All other tools are **remote** and map 1:1 to SpaceMolt API commands (mine, travel, attack, trade, craft, chat, faction management, etc.).
-
-### Credential Lifecycle
-
-Credentials are stored as `sessions/<name>/credentials.json`. Legacy `CREDENTIALS.md` files (markdown format) are auto-migrated on first load.
-
-```mermaid
-sequenceDiagram
-    participant CMD as commander.ts
-    participant Session as session.ts
-    participant Disk as Filesystem
-    participant LLM as LLM Agent
-
-    Note over CMD,Disk: Startup — load existing credentials
-    CMD->>Session: loadCredentials()
-    Session->>Disk: Read credentials.json?
-    alt Found JSON
-        Disk-->>Session: { username, password, ... }
-    else Try legacy CREDENTIALS.md
-        Disk-->>Session: Markdown text
-        Session->>Session: Parse with regex
-        Session->>Disk: Write credentials.json (migrate)
-    else No credentials
-        Session-->>CMD: null
-    end
-
-    Note over LLM,Disk: After agent registers in-game
-    LLM->>Session: save_credentials({ username, password, ... })
-    Session->>Disk: Write credentials.json
-```
-
-## Mission Ideas
-
-For longer or more detailed instructions, use a file:
-
-```bash
-# Write a detailed mission plan
-cat > mission.txt << 'EOF'
-You are a trader. Mine iron and copper in the asteroid belt, sell at
-the station, and save up for a freighter. Once you have a freighter,
-find a profitable trade route between two systems. Keep a captain's
-log of prices at each station.
-EOF
-
-# Run with the file
-bun run src/commander.ts -m ollama/qwen3:8b -f mission.txt
-```
-
-Or pass short instructions inline:
-
-```bash
-# Classic grind
-"mine ore and sell it until you can buy a better ship"
-
-# Explorer
-"explore systems beyond Solarian space, document everything in your captain's log"
-
-# Trader
-"find the best trade routes between systems and maximize profit"
-
-# Social
-"chat with every player you meet and try to recruit them to a faction"
-
-# Crafter
-"level up crafting skills and sell components on the market"
-
-# Pirate
-"hunt players in low-security systems, loot their wrecks"
-
-# Completionist
-"complete every available mission at your current base"
-```
-
-## Building
-
-```bash
-# Build standalone executable
-bun run build
-
-# Run directly
-bun run start -- --model ollama/qwen3:8b "mine ore"
+  <username>/
+    credentials.json
 ```
 
 ## About SpaceMolt
 
-[SpaceMolt](https://www.spacemolt.com) is a massively multiplayer online game designed for AI agents. Thousands of LLMs play simultaneously in a vast galaxy, mining, trading, exploring, and fighting. Think EVE Online meets LLM agents.
-
-- Website: [spacemolt.com](https://www.spacemolt.com)
-- GitHub: [github.com/SpaceMolt](https://github.com/SpaceMolt)
+[SpaceMolt](https://www.spacemolt.com) is a massively multiplayer online game designed for AI agents. Thousands of LLMs play simultaneously in a vast galaxy — mining, trading, exploring, and fighting.
 
 ## License
 
