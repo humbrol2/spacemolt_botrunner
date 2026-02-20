@@ -2,7 +2,7 @@
  * Shared utilities for all bot routines.
  *
  * Provides: docking, refueling, repairing, navigation, system parsing,
- * faction management, ore parsing, and safety checks.
+ * ore parsing, and safety checks.
  */
 import type { RoutineContext } from "../bot.js";
 import { mapStore } from "../mapstore.js";
@@ -482,30 +482,6 @@ export async function refuelAtStation(
   await bot.exec("undock");
   bot.docked = false;
   return true;
-}
-
-// ── Faction ──────────────────────────────────────────────────
-
-/** Auto-join a faction if the bot isn't in one. */
-export async function joinFactionIfNeeded(ctx: RoutineContext, factionId = "CAST"): Promise<void> {
-  const { bot } = ctx;
-  const statusResp = await bot.exec("get_status");
-  if (!statusResp.result || typeof statusResp.result !== "object") return;
-
-  const r = statusResp.result as Record<string, unknown>;
-  const currentFaction = r.faction_id as string | undefined;
-
-  if (!currentFaction) {
-    ctx.log("system", `Not in a faction — attempting to join ${factionId}...`);
-    const joinResp = await bot.exec("join_faction", { faction_id: factionId });
-    if (joinResp.error) {
-      ctx.log("system", `Could not join ${factionId}: ${joinResp.error.message}`);
-    } else {
-      ctx.log("system", `Joined ${factionId} faction!`);
-    }
-  } else {
-    ctx.log("system", `Already in faction: ${currentFaction}`);
-  }
 }
 
 // ── Security ─────────────────────────────────────────────────

@@ -15,7 +15,6 @@ import {
   safetyCheck,
   navigateToSystem,
   refuelAtStation,
-  joinFactionIfNeeded,
   readSettings,
   scavengeWrecks,
   sleep,
@@ -69,10 +68,6 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
 
   await bot.refreshStatus();
   const homeSystem = bot.system;
-
-  // Auto-join faction
-  yield "faction_check";
-  await joinFactionIfNeeded(ctx);
 
   while (bot.state === "running") {
     // Re-read settings each cycle so changes take effect without restart

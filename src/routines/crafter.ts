@@ -3,7 +3,6 @@ import {
   ensureDocked,
   tryRefuel,
   repairShip,
-  joinFactionIfNeeded,
   readSettings,
   scavengeWrecks,
   sleep,
@@ -124,10 +123,6 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
   const { bot } = ctx;
 
   await bot.refreshStatus();
-
-  // Auto-join faction
-  yield "faction_check";
-  await joinFactionIfNeeded(ctx);
 
   while (bot.state === "running") {
     const settings = getCrafterSettings();
