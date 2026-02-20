@@ -1,0 +1,4886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpaceMolt Commander</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-input: #0d1117;
+    --bg-row-hover: #1c2128;
+    --border: #30363d;
+    --border-active: #58a6ff;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --text-bright: #f0f6fc;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --cyan: #39d2c0;
+    --magenta: #bc8cff;
+    --orange: #db6d28;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-bright);
+    letter-spacing: 0.5px;
+    padding: 12px 0;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .conn-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+  }
+  .conn-dot.connected { background: var(--green); }
+
+  /* ── Top tabs ───────────────────────────────────── */
+  .top-tabs {
+    display: flex;
+    gap: 0;
+    margin-left: 32px;
+  }
+  .top-tab {
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .top-tab:hover { color: var(--text); }
+  .top-tab.active {
+    color: var(--text-bright);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── Main layout ────────────────────────────────── */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tab-page {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+    overflow: hidden;
+  }
+  .tab-page.active {
+    display: flex;
+  }
+
+  /* ── Bot table ──────────────────────────────────── */
+  .bot-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex: 0 0 auto;
+    max-height: 220px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .bot-table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .bot-table-header span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .bot-table-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: scroll;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  table.bot-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.bot-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    padding: 6px 10px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.bot-table tbody tr {
+    border-bottom: 1px solid #21262d;
+    transition: background 0.15s;
+  }
+  table.bot-table tbody tr:last-child { border-bottom: none; }
+  table.bot-table tbody tr:hover { background: var(--bg-row-hover); }
+  table.bot-table td {
+    padding: 7px 10px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .bot-name-cell {
+    color: var(--accent);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .bot-name-cell:hover { text-decoration: underline; }
+
+  .state-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.3px;
+  }
+  .state-idle { background: #21262d; color: var(--text-dim); }
+  .state-running { background: #0d2818; color: var(--green); }
+  .state-stopping { background: #2d1b00; color: var(--yellow); }
+  .state-error { background: #2d0000; color: var(--red); }
+
+  .row-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .row-actions select {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  .empty-row td {
+    color: var(--text-dim);
+    font-style: italic;
+    text-align: center;
+    padding: 16px 10px;
+  }
+
+  /* ── Buttons ────────────────────────────────────── */
+  button {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  button:hover { border-color: var(--accent); background: #1c2128; }
+  button.primary { background: #238636; border-color: #2ea043; color: #fff; }
+  button.primary:hover { background: #2ea043; }
+  button.danger { background: #da3633; border-color: #f85149; color: #fff; }
+  button.danger:hover { background: #f85149; }
+  button.sm { padding: 3px 10px; font-size: 11px; }
+
+  /* ── Log panels ─────────────────────────────────── */
+  .log-area {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 3fr 1fr;
+    gap: 12px;
+    min-height: 0;
+  }
+  .log-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .log-panel .log-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .log-panel .log-content {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 8px 12px;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  .system-panel { grid-column: 1 / -1; }
+
+  /* Log line colors */
+  .log-line { color: var(--text-dim); }
+  .log-line.cat-mining, .log-line.cat-craft { color: var(--green); }
+  .log-line.cat-travel { color: var(--cyan); }
+  .log-line.cat-trade { color: var(--yellow); }
+  .log-line.cat-error { color: var(--red); }
+  .log-line.cat-system { color: var(--accent); }
+  .log-line.cat-combat { color: var(--red); }
+  .log-line.cat-skill { color: var(--magenta); }
+  .log-line.cat-scavenge { color: var(--yellow); }
+  .log-line.cat-rescue { color: var(--cyan); font-weight: 600; }
+  .log-line.cat-broadcast { color: var(--orange); }
+  .log-line.cat-chat { color: var(--magenta); }
+
+  /* ── Chat input ─────────────────────────────────── */
+  .chat-bar {
+    display: flex;
+    gap: 8px;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .chat-bar select {
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    min-width: 140px;
+  }
+  .chat-bar input {
+    flex: 1;
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    outline: none;
+  }
+  .chat-bar input:focus { border-color: var(--accent); }
+  .chat-bar button { padding: 8px 20px; font-size: 13px; }
+
+  /* ── Modal ──────────────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    min-width: 340px;
+    max-width: 460px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal h2 {
+    font-size: 16px;
+    color: var(--text-bright);
+    margin-bottom: 16px;
+  }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    margin-top: 12px;
+  }
+  .modal input, .modal select {
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .modal .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  /* ── Bot Profile Page ───────────────────────────── */
+  .profile-page {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  .profile-page.active { display: flex; }
+
+  .profile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    flex-shrink: 0;
+  }
+  .profile-topbar .back-btn {
+    font-size: 18px;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+    border: none;
+    background: none;
+  }
+  .profile-topbar .back-btn:hover { background: var(--bg-row-hover); }
+  .profile-topbar h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+  .profile-topbar .profile-ship {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .profile-topbar .profile-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .profile-topbar .profile-actions select {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .profile-ore-label {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+
+  .profile-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    min-height: 0;
+  }
+
+  /* Left sidebar: status + inventory + storage */
+  .profile-sidebar {
+    border-right: 1px solid var(--border);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .profile-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .profile-card-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .profile-card-body {
+    padding: 10px 12px;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+    font-size: 12px;
+  }
+  .stat-grid .sl { color: var(--text-dim); }
+  .stat-grid .sv { color: var(--text); text-align: right; }
+
+  .inv-list {
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  .inv-list .inv-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .inv-list .inv-item:last-child { border-bottom: none; }
+  .inv-list .inv-name { color: var(--text); }
+  .inv-list .inv-qty { color: var(--text-dim); font-family: monospace; }
+  .inv-empty { color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+  /* Right: manual control + response log */
+  .profile-main {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+    min-height: 0;
+  }
+
+  /* Manual control panel */
+  .manual-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .manual-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .manual-body {
+    padding: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .cmd-group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+  }
+  .cmd-group label {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-right: 4px;
+  }
+  .cmd-group select, .cmd-group input {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    min-width: 100px;
+  }
+  .cmd-group input[type="number"] { width: 70px; min-width: 70px; }
+  .cmd-group button {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .craft-details-group {
+    padding: 8px 10px;
+    flex-basis: 100%;
+  }
+  .craft-details-group table th {
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #21262d;
+  }
+  .craft-details-group table td {
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  /* Response log at bottom of profile */
+  .response-panel {
+    flex: 1;
+    min-height: 300px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .response-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .response-header button {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+  .response-log {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 8px 12px;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  .resp-entry { margin-bottom: 8px; }
+  .resp-cmd { color: var(--accent); font-weight: 600; }
+  .resp-ok { color: var(--green); }
+  .resp-err { color: var(--red); }
+  .resp-data { color: var(--text-dim); margin-left: 12px; }
+
+  /* ── Settings page ──────────────────────────────── */
+  .settings-layout {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+  .settings-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-y: auto;
+  }
+  .settings-sidebar .sidebar-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-sidebar .sidebar-item {
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 1px solid #21262d;
+    transition: background 0.15s, color 0.15s;
+  }
+  .settings-sidebar .sidebar-item:hover { background: var(--bg-row-hover); color: var(--text); }
+  .settings-sidebar .sidebar-item.active {
+    background: var(--bg-row-hover);
+    color: var(--accent);
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+  }
+  .settings-panel {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    overflow-y: auto;
+  }
+  .settings-panel h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+  }
+  .settings-panel .settings-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label {
+    font-size: 13px;
+    color: var(--text);
+  }
+  .setting-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .setting-row select, .setting-row input[type="number"] {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    min-width: 180px;
+  }
+  .settings-save-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── Map page ───────────────────────────────────── */
+  .map-layout {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+  .map-filters {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .map-filters-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .map-stats-bar {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .map-stats-bar .stat-val {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .map-filter-body {
+    padding: 10px 14px;
+    overflow-y: scroll;
+    flex: 1;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  .map-filter-body label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  .map-filter-body label:first-child { margin-top: 0; }
+  .map-filter-body select, .map-filter-body input {
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .ore-filter-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .ore-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: #21262d;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .ore-chip:hover { border-color: var(--border); color: var(--text); }
+  .ore-chip.active { background: #0d2818; color: var(--green); border-color: var(--green); }
+  .ore-chip input { display: none; }
+
+  .map-content {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-y: scroll;
+    padding: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+
+  /* System card — collapsible */
+  .sys-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .sys-card:hover { border-color: #484f58; }
+  .sys-card.expanded { border-color: var(--accent); }
+  .sys-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.15s;
+  }
+  .sys-header:hover { background: var(--bg-row-hover); }
+  .sys-chevron {
+    font-size: 10px;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+  }
+  .sys-card.expanded .sys-chevron { transform: rotate(90deg); }
+  .sys-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    flex-shrink: 0;
+  }
+  .sys-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .badge-high { background: #0d2818; color: var(--green); }
+  .badge-medium { background: #2d1b00; color: var(--yellow); }
+  .badge-low { background: #2d0000; color: var(--red); }
+  .badge-null { background: #21262d; color: var(--text-dim); }
+  .sys-summary {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: auto;
+    display: flex;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .sys-summary span { white-space: nowrap; }
+  .sys-updated {
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+
+  /* System body (expanded) */
+  .sys-body {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding: 12px 14px;
+  }
+  .sys-card.expanded .sys-body { display: block; }
+  .sys-connections {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .sys-connections .conn-label {
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    margin-right: 2px;
+  }
+  .conn-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #21262d;
+    color: var(--text);
+    cursor: default;
+  }
+
+  /* POI inside system body */
+  .poi-card {
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .poi-card:last-child { margin-bottom: 0; }
+  .poi-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .poi-icon {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .poi-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .poi-type-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #21262d;
+    color: var(--text-dim);
+  }
+  .poi-base-name {
+    font-size: 11px;
+    color: var(--cyan);
+    font-weight: 500;
+  }
+
+  /* POI sub-sections */
+  .poi-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #1c2128;
+  }
+  .poi-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+  }
+  .poi-ore-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .poi-ore-tag {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 8px;
+    background: #0d2818;
+    color: var(--green);
+  }
+  .poi-ore-tag.highlight {
+    background: #238636;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Market table */
+  .mkt-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .mkt-table th {
+    text-align: left;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid #1c2128;
+  }
+  .mkt-table td {
+    padding: 3px 8px;
+    color: var(--text);
+    border-bottom: 1px solid #161b22;
+  }
+  .mkt-table tr:last-child td { border-bottom: none; }
+  .mkt-buy { color: var(--green); }
+  .mkt-sell { color: var(--yellow); }
+  .mkt-age {
+    color: var(--text-dim);
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  .mkt-expand-btn {
+    font-size: 10px;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 4px 0;
+    display: inline-block;
+  }
+  .mkt-expand-btn:hover { text-decoration: underline; }
+
+  /* Orders table */
+  .ord-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .ord-table th {
+    text-align: left;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid #1c2128;
+  }
+  .ord-table td {
+    padding: 3px 8px;
+    color: var(--text);
+    border-bottom: 1px solid #161b22;
+  }
+  .ord-buy { color: var(--green); }
+  .ord-sell { color: var(--red); }
+
+  /* Danger indicators (pirates/wrecks) */
+  .sys-danger {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #1c2128;
+  }
+  .danger-group {
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .danger-group .icon { font-size: 13px; }
+  .danger-pirates { color: var(--red); }
+  .danger-wrecks { color: var(--orange); }
+
+  .map-empty {
+    color: var(--text-dim);
+    font-style: italic;
+    text-align: center;
+    padding: 40px;
+  }
+
+  /* ── Missions page ─────────────────────────────────── */
+  .missions-layout {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+  .missions-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .missions-sidebar-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .missions-sidebar-body {
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .mission-bot-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    margin-bottom: 2px;
+    transition: all 0.15s;
+  }
+  .mission-bot-btn:hover { background: var(--bg-row-hover); }
+  .mission-bot-btn.active { background: rgba(88,166,255,0.1); border-color: var(--accent); color: var(--accent); }
+  .missions-content {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .missions-section {
+    margin-bottom: 20px;
+  }
+  .missions-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .missions-section-title .count-badge {
+    font-size: 10px;
+    background: #21262d;
+    color: var(--text-dim);
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .mission-card {
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .mission-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .mission-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mission-type-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #21262d;
+    color: var(--text-dim);
+  }
+  .mission-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .mission-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    align-items: center;
+  }
+  .mission-reward { color: var(--green); font-weight: 600; }
+  .mission-location { color: var(--cyan); }
+  .mission-age { color: var(--text-dim); opacity: 0.7; font-size: 10px; }
+  .mission-claim-btn {
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    margin-left: auto;
+    transition: opacity 0.15s;
+  }
+  .mission-claim-btn:hover { opacity: 0.8; }
+  .mission-claim-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .active-mission-status {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .ams-active { background: #0d2818; color: var(--green); }
+  .ams-complete { background: #21262d; color: var(--text-dim); }
+  .mission-action-btn {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mission-action-btn:hover { border-color: var(--text); color: var(--text); }
+  .mission-action-btn.complete-btn:hover { border-color: var(--green); color: var(--green); }
+  .mission-action-btn.abandon-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Scrollbar (Chromium) ─────────────────────────── */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #21262d; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb { background: #484f58; border-radius: 5px; border: 2px solid #21262d; }
+  ::-webkit-scrollbar-thumb:hover { background: #6e7681; }
+
+  /* ── Scrollbar (Firefox) ────────────────────────────── */
+  * { scrollbar-width: thin; scrollbar-color: #484f58 #21262d; }
+
+  /* ── Responsive ─────────────────────────────────── */
+  @media (max-width: 768px) {
+    .log-area { grid-template-columns: 1fr; }
+    .system-panel { grid-column: 1; }
+    table.bot-table { font-size: 12px; }
+    .settings-layout { flex-direction: column; }
+    .profile-body { grid-template-columns: 1fr; }
+    .profile-sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 300px; }
+    .map-layout { flex-direction: column; }
+    .map-filters { width: 100%; max-height: 200px; }
+    .sys-summary { display: none; }
+    .missions-layout { flex-direction: column; }
+    .missions-sidebar { width: 100%; max-height: 120px; }
+  }
+
+  /* Crafter settings */
+  .craft-limits-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .craft-limit-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px;
+  }
+  .craft-limit-info { flex: 1; min-width: 0; }
+  .craft-limit-name { font-weight: 600; color: var(--text); font-size: 0.9em; }
+  .craft-limit-detail { font-size: 0.75em; color: var(--dim); margin-top: 2px; }
+  .craft-limit-input {
+    width: 70px; text-align: center;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); padding: 4px 6px; font-size: 0.85em;
+  }
+  .craft-limit-input:focus { border-color: var(--accent); outline: none; }
+  .craft-cat {
+    display: inline-block; font-size: 0.65em; padding: 1px 5px;
+    border-radius: 3px; background: #1a3a2a; color: #4ade80;
+    margin-left: 6px; vertical-align: middle;
+  }
+
+  /* ── Faction page ───────────────────────────────────── */
+  .faction-layout {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+  .faction-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .faction-sidebar-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .faction-sidebar-body {
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .faction-nav-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    margin-bottom: 2px;
+    transition: all 0.15s;
+  }
+  .faction-nav-btn:hover { background: var(--bg-row-hover); }
+  .faction-nav-btn.active { background: rgba(88,166,255,0.1); border-color: var(--accent); color: var(--accent); }
+  .faction-content {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .faction-section { margin-bottom: 20px; }
+  .faction-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .faction-section-title .count-badge {
+    font-size: 10px;
+    background: #21262d;
+    color: var(--text-dim);
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .faction-card {
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .faction-card .fc-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .faction-card .fc-detail {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .faction-card .fc-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .faction-stat-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+  }
+  .faction-stat-grid .fsl { color: var(--text-dim); }
+  .faction-stat-grid .fsv { color: var(--text); }
+  .faction-member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid #21262d;
+    font-size: 12px;
+  }
+  .faction-member-row:last-child { border-bottom: none; }
+  .faction-member-row .fm-name { color: var(--text); font-weight: 500; }
+  .faction-member-row .fm-role { color: var(--text-dim); font-size: 11px; }
+  .faction-member-row .fm-actions { display: flex; gap: 4px; }
+  .faction-storage-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-bottom: 1px solid #21262d;
+    font-size: 12px;
+  }
+  .faction-storage-row:last-child { border-bottom: none; }
+  .faction-no-data {
+    color: var(--text-dim);
+    font-style: italic;
+    font-size: 12px;
+    padding: 12px;
+  }
+  .faction-invite-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .faction-invite-row input {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+    flex: 1;
+  }
+  @media (max-width: 768px) {
+    .faction-layout { flex-direction: column; }
+    .faction-sidebar { width: 100%; max-height: 120px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center">
+    <h1>SpaceMolt Commander</h1>
+    <div class="top-tabs" id="topTabs">
+      <div class="top-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</div>
+      <div class="top-tab" data-tab="map" onclick="switchTab('map')">Map</div>
+      <div class="top-tab" data-tab="missions" onclick="switchTab('missions')">Missions</div>
+      <div class="top-tab" data-tab="faction" onclick="switchTab('faction')">Faction</div>
+      <div class="top-tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="conn-status">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">Connecting...</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ══ Dashboard Tab ══ -->
+  <div class="tab-page active" id="page-dashboard">
+    <div class="bot-table-wrap">
+      <div class="bot-table-header">
+        <span>Bots</span>
+        <button class="sm" onclick="showAddModal()">+ Add Bot</button>
+      </div>
+      <div class="bot-table-scroll">
+        <table class="bot-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Ship</th>
+              <th>State</th>
+              <th>Credits</th>
+              <th>Fuel</th>
+              <th>Hull/Shd</th>
+              <th>Cargo</th>
+              <th>Location</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="botTableBody">
+            <tr class="empty-row"><td colspan="9">No bots configured</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="log-area">
+      <div class="log-panel">
+        <div class="log-header">Activity Log</div>
+        <div class="log-content" id="activityLog"></div>
+      </div>
+      <div class="log-panel">
+        <div class="log-header">Broadcast / Chat</div>
+        <div class="log-content" id="broadcastLog"></div>
+      </div>
+      <div class="log-panel system-panel">
+        <div class="log-header">System Messages</div>
+        <div class="log-content" id="systemLog"></div>
+      </div>
+    </div>
+
+    <div class="chat-bar">
+      <select id="chatBot"></select>
+      <select id="chatChannel">
+        <option value="system">System</option>
+        <option value="local">Local</option>
+        <option value="faction">Faction</option>
+      </select>
+      <input type="text" id="chatInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="primary" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+
+  <!-- ══ Settings Tab ══ -->
+  <div class="tab-page" id="page-settings">
+    <div class="settings-layout">
+      <div class="settings-sidebar">
+        <div class="sidebar-header">Bot Types</div>
+        <div class="sidebar-item active" onclick="switchSettingsTab('miner')">Miner</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('crafter')">Crafter</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('rescue')">FuelRescue</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('explorer')">Explorer</div>
+      </div>
+      <div class="settings-panel" id="settingsContent">
+        <!-- filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Map Tab ══ -->
+  <div class="tab-page" id="page-map">
+    <div class="map-layout">
+      <div class="map-filters">
+        <div class="map-filters-header">Galaxy Map</div>
+        <div class="map-stats-bar" id="mapStatsBar"></div>
+        <div class="map-filter-body">
+          <label>Search System</label>
+          <input type="text" id="mapSearch" placeholder="System name..." oninput="renderMap()">
+          <label>Security Level</label>
+          <select id="mapSecFilter" onchange="renderMap()">
+            <option value="">All</option>
+            <option value="high">High Security</option>
+            <option value="medium">Medium Security</option>
+            <option value="low">Low Security</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <label>Resources</label>
+          <div class="ore-filter-list" id="oreFilterList">
+            <!-- filled by JS -->
+          </div>
+          <label>Sort By</label>
+          <select id="mapSortBy" onchange="renderMap()">
+            <option value="name">Name</option>
+            <option value="updated">Last Updated</option>
+            <option value="pois">Most POIs</option>
+            <option value="security">Security Level</option>
+          </select>
+        </div>
+      </div>
+      <div class="map-content" id="mapContent">
+        <div class="map-empty">No map data yet. Start a bot to begin exploring!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Missions Tab ══ -->
+  <div class="tab-page" id="page-missions">
+    <div class="missions-layout">
+      <div class="missions-sidebar">
+        <div class="missions-sidebar-header">Missions</div>
+        <div class="missions-sidebar-body" id="missionsSidebarBody">
+          <!-- filled by JS -->
+        </div>
+      </div>
+      <div class="missions-content" id="missionsContent">
+        <div class="map-empty">Select a bot to view active missions, or browse all available missions.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Faction Tab ══ -->
+  <div class="tab-page" id="page-faction">
+    <div class="faction-layout">
+      <div class="faction-sidebar">
+        <div class="faction-sidebar-header">Faction</div>
+        <div class="faction-sidebar-body" id="factionSidebarBody">
+          <!-- filled by JS -->
+        </div>
+      </div>
+      <div class="faction-content" id="factionContent">
+        <div class="faction-no-data">Select a bot to view or manage its faction.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Bot Profile Page (hidden by default) ══ -->
+  <div class="profile-page" id="page-profile">
+    <div class="profile-topbar">
+      <button class="back-btn" onclick="closeProfile()">&larr;</button>
+      <h2 id="profileName">-</h2>
+      <span class="profile-ship" id="profileShip"></span>
+      <span id="profileBadge"></span>
+      <div class="profile-actions" id="profileActions"></div>
+    </div>
+    <div class="profile-body">
+      <div class="profile-sidebar" id="profileSidebar">
+        <!-- filled by JS: status, inventory, storage -->
+      </div>
+      <div class="profile-main">
+        <div class="manual-panel">
+          <div class="manual-header">Manual Control</div>
+          <div class="manual-body" id="manualControls">
+            <!-- filled by JS -->
+          </div>
+        </div>
+        <div class="response-panel">
+          <div class="response-header">
+            <span>Command Log</span>
+            <button onclick="clearResponseLog()">Clear</button>
+          </div>
+          <div class="response-log" id="responseLog"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Add / Register Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h2 id="modalTitle">Add Existing Bot</h2>
+    <div id="modalAddFields">
+      <label>Username</label>
+      <input type="text" id="addUsername" placeholder="Bot username">
+      <label>Password</label>
+      <input type="password" id="addPassword" placeholder="Bot password">
+    </div>
+    <div id="modalRegFields" style="display:none">
+      <label>Registration Code</label>
+      <input type="text" id="regCode" placeholder="From spacemolt.com/dashboard">
+      <label>Username (3-24 chars)</label>
+      <input type="text" id="regUsername" placeholder="New username">
+      <label>Empire</label>
+      <select id="regEmpire">
+        <option value="solarian">Solarian Empire (mining/trade)</option>
+        <option value="nebula">Nebula Collective (exploration)</option>
+        <option value="crimson">Crimson Fleet (combat)</option>
+        <option value="voidborn">Voidborn (stealth/shields)</option>
+        <option value="outerrim">Outer Rim (crafting/cargo)</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button onclick="toggleModalMode()" id="modalToggle">Register New</button>
+      <button onclick="closeAddModal()">Cancel</button>
+      <button class="primary" onclick="submitAddModal()" id="modalSubmit">Add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────
+let ws = null;
+let bots = [];
+let routines = [];
+let settings = {};
+let knownSystems = [];
+let knownOres = [];
+let reconnectDelay = 1000;
+let modalMode = 'add';
+let activeSettingsTab = 'miner';
+
+// Profile state
+let profileBot = null;       // username of bot being viewed
+let profileSystemData = null; // cached system info {pois, connections}
+let profileRecipes = null;    // cached recipes from get_recipes
+let profileMarket = null;     // cached market items from view_market (sorted by price)
+let profileSkills = {};       // cached skills { skill_id: level }
+let profileSkillsList = null;  // full skill objects for display (null = not fetched)
+let mapData = {};             // systems from mapStore
+let activeOreFilters = new Set(); // selected ore item_ids to filter by
+
+const activityEl = document.getElementById('activityLog');
+const broadcastEl = document.getElementById('broadcastLog');
+const systemEl = document.getElementById('systemLog');
+const connDot = document.getElementById('connDot');
+const connText = document.getElementById('connText');
+
+const autoScroll = { activity: true, broadcast: true, system: true };
+for (const [key, el] of [['activity', activityEl], ['broadcast', broadcastEl], ['system', systemEl]]) {
+  el.addEventListener('scroll', () => {
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    autoScroll[key] = atBottom;
+  });
+}
+
+// ── Top-level tabs ─────────────────────────────────────────
+function switchTab(name) {
+  // Hide profile if switching to a normal tab
+  document.getElementById('page-profile').classList.remove('active');
+  document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  const tab = document.querySelector(`.top-tab[data-tab="${name}"]`);
+  if (tab) tab.classList.add('active');
+  const page = document.getElementById(`page-${name}`);
+  if (page) page.classList.add('active');
+  if (name === 'settings') renderSettingsPanel();
+  if (name === 'map') renderMapPage();
+  if (name === 'missions') renderMissionsPage();
+  if (name === 'faction') renderFactionPage();
+}
+
+// ── WebSocket ──────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    connDot.classList.add('connected');
+    connText.textContent = 'Connected';
+    reconnectDelay = 1000;
+  };
+
+  ws.onclose = () => {
+    connDot.classList.remove('connected');
+    connText.textContent = 'Disconnected';
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+
+  ws.onerror = () => {};
+
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    switch (msg.type) {
+      case 'init':
+        bots = msg.bots || [];
+        routines = msg.routines || [];
+        settings = msg.settings || {};
+        knownSystems = msg.knownSystems || [];
+        knownOres = msg.knownOres || [];
+        mapData = msg.mapData || {};
+        renderBots();
+        updateChatBotSelect();
+        renderSettingsPanel();
+        if (msg.logs) {
+          appendLines(activityEl, 'activity', msg.logs.activity || []);
+          appendLines(broadcastEl, 'broadcast', msg.logs.broadcast || []);
+          appendLines(systemEl, 'system', msg.logs.system || []);
+        }
+        break;
+      case 'status':
+        bots = msg.bots || [];
+        renderBots();
+        updateChatBotSelect();
+        // Update profile if open
+        if (profileBot) renderProfileSidebar();
+        break;
+      case 'log':
+        appendLine(msg.panel, msg.line);
+        break;
+      case 'actionResult':
+        if (msg.error) {
+          appendLine('system', `Error: ${msg.error}`);
+        } else if (msg.message) {
+          appendLine('system', msg.message);
+        }
+        if (msg.password) {
+          alert(`Registration successful!\n\nPassword: ${msg.password}\n\nSAVE THIS PASSWORD!`);
+        }
+        if (msg.settings) {
+          settings = msg.settings;
+        }
+        break;
+      case 'execResult':
+        handleExecResult(msg);
+        break;
+      case 'mapUpdate':
+        mapData = msg.mapData || {};
+        knownOres = msg.knownOres || knownOres;
+        // Re-render map tab if it's active
+        if (document.getElementById('page-map')?.classList.contains('active')) {
+          renderMapPage();
+        }
+        // Re-render missions tab if it's active
+        if (document.getElementById('page-missions')?.classList.contains('active')) {
+          renderMissionsFromMap();
+        }
+        break;
+    }
+  };
+}
+
+// ── Bot table rendering ────────────────────────────────────
+function renderBots() {
+  const tbody = document.getElementById('botTableBody');
+  if (bots.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No bots configured</td></tr>';
+    return;
+  }
+  tbody.innerHTML = bots.map(bot => {
+    const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) + '%' : bot.fuel;
+    const loc = bot.poi ? `${bot.system} - ${bot.poi}` : (bot.system || bot.location);
+    const stateLabel = bot.state === 'running' && bot.routine ? bot.routine : bot.state;
+    const hullShd = (bot.maxHull > 0 || bot.maxShield > 0) ? `${bot.hull}/${bot.shield}` : '-';
+    const cargo = bot.cargoMax > 0 ? `${bot.cargo}/${bot.cargoMax}` : `${bot.cargo}`;
+    let actions = '';
+    if (bot.state !== 'running' && bot.state !== 'stopping') {
+      const prevSel = document.getElementById(`routine-${bot.username}`);
+      const prevRoutine = prevSel ? prevSel.value : (bot.routine || 'miner');
+      actions = `
+        <select id="routine-${esc(bot.username)}" onclick="event.stopPropagation()">
+          ${routines.map(r => `<option value="${esc(r)}"${r === prevRoutine ? ' selected' : ''}>${esc(r)}</option>`).join('')}
+        </select>
+        <button class="primary sm" onclick="event.stopPropagation();startBot('${esc(bot.username)}')">Start</button>`;
+    } else if (bot.state === 'running') {
+      actions = `<button class="danger sm" onclick="event.stopPropagation();stopBot('${esc(bot.username)}')">Stop</button>`;
+    }
+    return `<tr>
+      <td class="bot-name-cell" onclick="openProfile('${esc(bot.username)}')">${esc(bot.username)}</td>
+      <td>${esc(bot.shipName || '-')}</td>
+      <td><span class="state-badge state-${bot.state}">${esc(stateLabel)}</span></td>
+      <td>${num(bot.credits)}cr</td>
+      <td>${fuelPct}</td>
+      <td>${hullShd}</td>
+      <td>${cargo}</td>
+      <td style="color:var(--cyan)">${esc(loc)}</td>
+      <td><div class="row-actions">${actions}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Bot Profile ────────────────────────────────────────────
+function openProfile(username) {
+  profileBot = username;
+  profileSystemData = null;
+  profileRecipes = null;
+  profileSkills = {};
+
+  // Hide all tabs, show profile
+  document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-profile').classList.add('active');
+
+  renderProfileSidebar();
+  renderProfileTopbar();
+  renderManualControls();
+
+  // Fetch system data, skills, recipes, and market
+  fetchSystemData(username);
+  fetchSkills(username);
+  fetchRecipes(username);
+  fetchMarket(username);
+}
+
+function closeProfile() {
+  profileBot = null;
+  profileSystemData = null;
+  profileRecipes = null;
+  profileSkills = {};
+  profileSkillsList = null;
+  document.getElementById('page-profile').classList.remove('active');
+  switchTab('dashboard');
+}
+
+function getProfileBot() {
+  return bots.find(b => b.username === profileBot) || null;
+}
+
+function renderProfileTopbar() {
+  const bot = getProfileBot();
+  if (!bot) return;
+  const stateLabel = bot.state === 'running' && bot.routine ? bot.routine : bot.state;
+  document.getElementById('profileName').textContent = bot.username;
+  document.getElementById('profileShip').textContent = bot.shipName || 'No ship';
+  document.getElementById('profileBadge').innerHTML = `<span class="state-badge state-${bot.state}">${esc(stateLabel)}</span>`;
+
+  let actions = '';
+  if (bot.state !== 'running' && bot.state !== 'stopping') {
+    const prevProfileSel = document.getElementById('profile-routine');
+    const prevProfileRoutine = prevProfileSel ? prevProfileSel.value : (bot.routine || 'miner');
+    actions = `
+      <select id="profile-routine" onchange="renderProfileTopbar()">
+        ${routines.map(r => `<option value="${esc(r)}"${r === prevProfileRoutine ? ' selected' : ''}>${esc(r)}</option>`).join('')}
+      </select>
+      <button class="primary sm" onclick="startBotFromProfile()">Start</button>`;
+  } else if (bot.state === 'running') {
+    actions = `<button class="danger sm" onclick="stopBot('${esc(bot.username)}')">Stop</button>`;
+  }
+
+  // Per-bot target ore selector (visible when miner is selected or running)
+  const isMiner = (bot.state === 'running' && bot.routine === 'miner')
+    || (bot.state !== 'running' && bot.state !== 'stopping' && getProfileSelectedRoutine() === 'miner');
+  if (isMiner) {
+    const botSettings = settings[bot.username] || {};
+    const globalOre = (settings.miner || {}).targetOre || '';
+    const botOre = botSettings.targetOre || '';
+    const effectiveOre = botOre || globalOre;
+    const oreOpts = [`<option value=""${!botOre ? ' selected' : ''}>(global: ${globalOre ? esc(getOreName(globalOre)) : 'any'})</option>`];
+    for (const ore of knownOres) {
+      const sel = ore.item_id === botOre ? ' selected' : '';
+      oreOpts.push(`<option value="${esc(ore.item_id)}"${sel}>${esc(ore.name)}</option>`);
+    }
+    if (botOre && !knownOres.find(o => o.item_id === botOre)) {
+      oreOpts.push(`<option value="${esc(botOre)}" selected>${esc(botOre)}</option>`);
+    }
+    actions += `
+      <span class="profile-ore-label">Target Ore:</span>
+      <select id="profile-targetOre" onchange="saveProfileTargetOre()">${oreOpts.join('')}</select>`;
+  }
+
+  document.getElementById('profileActions').innerHTML = actions;
+}
+
+function getProfileSelectedRoutine() {
+  const sel = document.getElementById('profile-routine');
+  return sel ? sel.value : 'miner';
+}
+
+function getOreName(oreId) {
+  const ore = knownOres.find(o => o.item_id === oreId);
+  return ore ? ore.name : oreId;
+}
+
+function saveProfileTargetOre() {
+  const bot = getProfileBot();
+  if (!bot) return;
+  const sel = document.getElementById('profile-targetOre');
+  if (!sel) return;
+  const targetOre = sel.value;
+  const existing = settings[bot.username] || {};
+  const updated = Object.assign({}, existing, { targetOre });
+  send({ type: 'saveSettings', routine: bot.username, settings: updated });
+  settings[bot.username] = updated;
+}
+
+function renderProfileSidebar() {
+  const bot = getProfileBot();
+  if (!bot) return;
+
+  renderProfileTopbar();
+
+  const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : bot.fuel;
+  const loc = bot.poi ? `${bot.system} - ${bot.poi}` : (bot.system || bot.location);
+
+  const invItems = bot.inventory && bot.inventory.length > 0
+    ? bot.inventory.map(i => `<div class="inv-item"><span class="inv-name">${esc(i.name)}</span><span class="inv-qty">x${i.quantity}</span></div>`).join('')
+    : '<div class="inv-empty">Empty</div>';
+
+  const storItems = bot.storage && bot.storage.length > 0
+    ? bot.storage.map(i => `<div class="inv-item"><span class="inv-name">${esc(i.name)}</span><span class="inv-qty">x${i.quantity}</span></div>`).join('')
+    : '<div class="inv-empty">Empty</div>';
+
+  document.getElementById('profileSidebar').innerHTML = `
+    <div class="profile-card">
+      <div class="profile-card-header">Status</div>
+      <div class="profile-card-body">
+        <div class="stat-grid">
+          <span class="sl">Credits</span><span class="sv">${num(bot.credits)}cr</span>
+          <span class="sl">Fuel</span><span class="sv">${bot.fuel} / ${bot.maxFuel} (${fuelPct}%)</span>
+          <span class="sl">Hull</span><span class="sv">${bot.hull} / ${bot.maxHull}</span>
+          <span class="sl">Shield</span><span class="sv">${bot.shield} / ${bot.maxShield}</span>
+          <span class="sl">Cargo</span><span class="sv">${bot.cargo} / ${bot.cargoMax}</span>
+          <span class="sl">Ammo</span><span class="sv">${bot.ammo}</span>
+          <span class="sl">Location</span><span class="sv" style="color:var(--cyan)">${esc(loc)}</span>
+          <span class="sl">Docked</span><span class="sv">${bot.docked ? 'Yes' : 'No'}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-card">
+      <div class="profile-card-header">Cargo Hold</div>
+      <div class="profile-card-body">
+        <div class="inv-list">${invItems}</div>
+      </div>
+    </div>
+
+    <div class="profile-card">
+      <div class="profile-card-header">Station Storage</div>
+      <div class="profile-card-body">
+        <div class="inv-list">${storItems}</div>
+      </div>
+    </div>
+
+    <div class="profile-card">
+      <div class="profile-card-header">Skills</div>
+      <div class="profile-card-body">
+        <div class="inv-list">${renderSkillsList()}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSkillsList() {
+  if (profileSkillsList === null || profileSkillsList === undefined) {
+    return '<div class="inv-empty">Loading...</div>';
+  }
+  if (profileSkillsList.length === 0) {
+    return '<div class="inv-empty">No skills data</div>';
+  }
+  return profileSkillsList.map(s => {
+    const name = s.name || s.skill_id || s.id || '?';
+    const level = s.level || 0;
+    const xp = s.xp != null ? s.xp : '';
+    const nextXp = s.xp_to_next != null ? s.xp_to_next : (s.next_level_xp != null ? s.next_level_xp : '');
+    let bar = '';
+    if (xp !== '' && nextXp !== '' && nextXp > 0) {
+      const pct = Math.min(100, Math.round((xp / nextXp) * 100));
+      bar = ` <span style="color:var(--text-dim);font-size:10px">${xp}/${nextXp} (${pct}%)</span>`;
+    } else if (xp !== '') {
+      bar = ` <span style="color:var(--text-dim);font-size:10px">${xp} xp</span>`;
+    }
+    return `<div class="inv-item"><span class="inv-name">${esc(name)}</span><span class="inv-qty">Lv${level}${bar}</span></div>`;
+  }).join('');
+}
+
+function renderManualControls() {
+  const bot = getProfileBot();
+  if (!bot) return;
+
+  const poiOpts = profileSystemData && profileSystemData.pois
+    ? profileSystemData.pois.map(p => `<option value="${esc(p.id)}">${esc(p.name || p.id)} (${esc(p.type || '')})</option>`).join('')
+    : '<option value="">Loading...</option>';
+
+  // All known systems for auto-route jump
+  const currentSys = bot.system || '';
+  const jumpOpts = knownSystems.length > 0
+    ? knownSystems
+        .filter(s => s.id !== currentSys)
+        .map(s => {
+          const label = s.name ? `${s.name} (${s.id})` : s.id;
+          return `<option value="${esc(s.id)}">${esc(label)}</option>`;
+        }).join('')
+    : '<option value="">No systems mapped</option>';
+
+  // Build sell/deposit item options from cargo
+  const cargoOpts = bot.inventory && bot.inventory.length > 0
+    ? bot.inventory.map(i => `<option value="${esc(i.itemId)}" data-max="${i.quantity}">${esc(i.name)} (${i.quantity})</option>`).join('')
+    : '<option value="">No items</option>';
+
+  // Build withdraw item options from storage
+  const storOpts = bot.storage && bot.storage.length > 0
+    ? bot.storage.map(i => `<option value="${esc(i.itemId)}" data-max="${i.quantity}">${esc(i.name)} (${i.quantity})</option>`).join('')
+    : '<option value="">No items</option>';
+
+  // Build buy options from market (sorted by lowest price)
+  const marketOpts = profileMarket && profileMarket.length > 0
+    ? profileMarket.map(i => {
+        const price = i.buy_price != null ? ` (${Number(i.buy_price).toLocaleString()}cr` + (i.stock != null ? `, stock:${i.stock}` : '') + ')' : '';
+        return `<option value="${esc(i.item_id)}" data-price="${i.buy_price || 0}" data-stock="${i.stock || ''}">${esc(i.name)}${esc(price)}</option>`;
+      }).join('')
+    : '<option value="">No market data — dock first</option>';
+
+  // Build other bots list for trade/gift
+  const otherBotOpts = bots
+    .filter(b => b.username !== bot.username)
+    .map(b => `<option value="${esc(b.username)}">${esc(b.username)}</option>`)
+    .join('') || '<option value="">No other bots</option>';
+
+  // Build recipe options for crafting — only show craftable recipes
+  const have = getOwnedItems(bot);
+  let craftSection = '';
+  if (profileRecipes && profileRecipes.length > 0) {
+    const craftable = profileRecipes
+      .map((r, i) => ({ recipe: r, idx: i }))
+      .filter(({ recipe }) => canCraft(recipe, have));
+
+    if (craftable.length > 0) {
+      const recipeOpts = craftable.map(({ recipe, idx }) => {
+        const name = recipe.name || recipe.recipe_id || recipe.id || `Recipe ${idx}`;
+        const cat = recipe.category ? ` [${recipe.category}]` : '';
+        return `<option value="${idx}">${esc(name)}${esc(cat)}</option>`;
+      }).join('');
+      craftSection = `
+      <div class="cmd-group craft-group">
+        <label>Craft</label>
+        <select id="mc-craft-recipe" onchange="showRecipeDetails()">${recipeOpts}</select>
+        <input type="number" id="mc-craft-qty" min="1" value="1" style="width:60px">
+        <button class="primary sm" onclick="mcCraft()">Craft</button>
+      </div>
+      <div class="cmd-group craft-details-group" id="craftDetailsGroup" style="width:100%">
+        <div id="craftDetails"></div>
+      </div>`;
+    } else {
+      craftSection = `
+      <div class="cmd-group">
+        <label>Craft</label>
+        <span style="font-size:11px;color:var(--text-dim)">No craftable recipes (missing resources or skills) &mdash; ${profileRecipes.length} total recipes</span>
+      </div>`;
+    }
+  } else {
+    craftSection = `
+    <div class="cmd-group">
+      <label>Craft</label>
+      <span style="font-size:11px;color:var(--text-dim)">${profileRecipes === null ? 'Loading recipes...' : 'No recipes available'}</span>
+    </div>`;
+  }
+
+  document.getElementById('manualControls').innerHTML = `
+    <div class="cmd-group">
+      <label>Travel</label>
+      <select id="mc-travel-poi">${poiOpts}</select>
+      <button class="primary sm" onclick="mcExec('travel',{target_poi:val('mc-travel-poi')})">Go</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Jump To</label>
+      <select id="mc-jump-sys">${jumpOpts}</select>
+      <button class="primary sm" id="mc-jump-btn" onclick="mcAutoRoute()">Route</button>
+    </div>
+
+    <div class="cmd-group">
+      <button class="sm" onclick="mcExec('dock')">Dock</button>
+      <button class="sm" onclick="mcExec('undock')">Undock</button>
+    </div>
+
+    <div class="cmd-group">
+      <button class="primary sm" onclick="mcExec('mine')">Mine</button>
+      <button class="sm" onclick="mcExec('scan')">Scan</button>
+    </div>
+
+    <div class="cmd-group">
+      <button class="sm" onclick="mcExec('refuel')">Refuel</button>
+      <button class="sm" onclick="mcExec('repair')">Repair</button>
+    </div>
+
+    ${craftSection}
+
+    <div class="cmd-group">
+      <label>Sell</label>
+      <select id="mc-sell-item" onchange="syncQty(this,'mc-sell-qty')">${cargoOpts}</select>
+      <input type="number" id="mc-sell-qty" min="1" value="1">
+      <button class="sm" onclick="mcExec('sell',{item_id:val('mc-sell-item'),quantity:intVal('mc-sell-qty')})">Sell</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Buy</label>
+      <select id="mc-buy-item" onchange="syncBuyInfo()">${marketOpts}</select>
+      <input type="number" id="mc-buy-qty" min="1" value="1">
+      <button class="sm" onclick="mcExec('buy',{item_id:val('mc-buy-item'),quantity:intVal('mc-buy-qty')})">Buy</button>
+      <span id="mc-buy-info" style="font-size:0.75em;color:var(--dim)"></span>
+    </div>
+
+    <div class="cmd-group">
+      <label>Deposit</label>
+      <select id="mc-dep-item" onchange="syncQty(this,'mc-dep-qty')">${cargoOpts}</select>
+      <input type="number" id="mc-dep-qty" min="1" value="1">
+      <button class="sm" onclick="mcExec('deposit_items',{item_id:val('mc-dep-item'),quantity:intVal('mc-dep-qty')})">Deposit</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Withdraw</label>
+      <select id="mc-wit-item" onchange="syncQty(this,'mc-wit-qty')">${storOpts}</select>
+      <input type="number" id="mc-wit-qty" min="1" value="1">
+      <button class="sm" onclick="mcExec('withdraw_items',{item_id:val('mc-wit-item'),quantity:intVal('mc-wit-qty')})">Withdraw</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Gift Item</label>
+      <select id="mc-gift-target">${otherBotOpts}</select>
+      <select id="mc-gift-item" onchange="syncQty(this,'mc-gift-qty')">${cargoOpts}</select>
+      <input type="number" id="mc-gift-qty" min="1" value="1">
+      <button class="sm" onclick="mcExec('send_gift',{recipient:val('mc-gift-target'),item_id:val('mc-gift-item'),quantity:intVal('mc-gift-qty')})">Send</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Send Credits</label>
+      <select id="mc-credits-target">${otherBotOpts}</select>
+      <input type="number" id="mc-credits-amount" min="1" value="100" style="width:90px">
+      <button class="sm" onclick="mcExec('send_gift',{recipient:val('mc-credits-target'),credits:intVal('mc-credits-amount')})">Send</button>
+    </div>
+
+    <div class="cmd-group">
+      <button class="sm" onclick="mcExec('get_status')">Status</button>
+      <button class="sm" onclick="mcExec('get_cargo')">Cargo</button>
+      <button class="sm" onclick="mcExec('view_storage')">Storage</button>
+      <button class="sm" onclick="mcExec('view_market')">Market</button>
+      <button class="sm" onclick="mcExec('get_system')">System</button>
+      <button class="sm" onclick="mcExec('get_nearby')">Nearby</button>
+    </div>
+
+    <div class="cmd-group">
+      <label>Custom</label>
+      <input type="text" id="mc-custom-cmd" placeholder="command" style="min-width:100px">
+      <input type="text" id="mc-custom-params" placeholder='{"key":"val"}' style="min-width:160px">
+      <button class="primary sm" onclick="mcExecCustom()">Run</button>
+    </div>
+  `;
+
+  // Show details for initially selected recipe
+  if (profileRecipes && profileRecipes.length > 0) showRecipeDetails();
+}
+
+function showRecipeDetails() {
+  const sel = document.getElementById('mc-craft-recipe');
+  const detailEl = document.getElementById('craftDetails');
+  if (!sel || !detailEl || !profileRecipes) return;
+
+  const idx = parseInt(sel.value);
+  const recipe = profileRecipes[idx];
+  if (!recipe) { detailEl.innerHTML = ''; return; }
+
+  const bot = getProfileBot();
+  const have = getOwnedItems(bot);
+
+  const comps = recipe.components || recipe.ingredients || recipe.inputs || recipe.materials || [];
+  if (comps.length === 0) {
+    detailEl.innerHTML = '<span style="color:var(--text-dim);font-size:11px">No components listed</span>';
+    return;
+  }
+
+  const output = recipe.output || recipe.result || recipe.produces || {};
+  const outputName = output.name || output.item_id || recipe.name || '?';
+  const outputQty = output.quantity || 1;
+  const desc = recipe.description || '';
+
+  let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">
+    Produces: <span style="color:var(--green)">${esc(String(outputQty))}x ${esc(outputName)}</span>
+  </div>`;
+  if (desc) html += `<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;font-style:italic">${esc(desc)}</div>`;
+  html += '<table style="font-size:11px;border-collapse:collapse;width:100%">';
+  html += '<tr style="color:var(--text-dim)"><th style="text-align:left;padding:2px 8px 2px 0">Component</th><th style="text-align:right;padding:2px 4px">Need</th><th style="text-align:right;padding:2px 4px">Have</th><th></th></tr>';
+
+  for (const c of comps) {
+    const cId = c.item_id || c.id || '';
+    const cName = c.name || cId;
+    const cQty = c.quantity || 1;
+    const owned = have[cId] || 0;
+    const enough = owned >= cQty;
+    const color = enough ? 'var(--green)' : 'var(--red)';
+    const icon = enough ? '&#10003;' : '&#10007;';
+    html += `<tr>
+      <td style="padding:2px 8px 2px 0;color:var(--text)">${esc(cName)}</td>
+      <td style="text-align:right;padding:2px 4px;font-family:monospace">${cQty}</td>
+      <td style="text-align:right;padding:2px 4px;font-family:monospace;color:${color}">${owned}</td>
+      <td style="padding:2px 0 2px 4px;color:${color}">${icon}</td>
+    </tr>`;
+  }
+  html += '</table>';
+
+  // Skill requirement
+  const skill = recipe.required_skill || recipe.skill;
+  if (skill) {
+    const sId = skill.skill_id || skill.id || skill.name || '';
+    const sName = skill.name || sId;
+    const sLevel = skill.level || skill.min_level || 0;
+    const myLevel = profileSkills[sId] || profileSkills[sName] || 0;
+    const met = myLevel >= sLevel;
+    const sColor = met ? 'var(--green)' : 'var(--red)';
+    if (sName) html += `<div style="font-size:10px;margin-top:4px;color:${sColor}">Requires: ${esc(sName)} Lv${sLevel} (you: Lv${myLevel})</div>`;
+  }
+
+  detailEl.innerHTML = html;
+}
+
+function mcCraft() {
+  const sel = document.getElementById('mc-craft-recipe');
+  if (!sel || !profileRecipes) return;
+  const idx = parseInt(sel.value);
+  const recipe = profileRecipes[idx];
+  if (!recipe) return;
+
+  const recipeId = recipe.recipe_id || recipe.id || recipe.name || '';
+  const qty = intVal('mc-craft-qty');
+  mcExec('craft', { recipe_id: recipeId, count: qty });
+}
+
+function val(id) { return document.getElementById(id)?.value || ''; }
+function intVal(id) { return parseInt(document.getElementById(id)?.value) || 1; }
+
+let autoRouteInProgress = false;
+
+function mcAutoRoute() {
+  if (!profileBot) return;
+  const target = val('mc-jump-sys');
+  if (!target) return;
+  if (autoRouteInProgress) {
+    logResponse('<span class="resp-err">Route already in progress</span>');
+    return;
+  }
+
+  const btn = document.getElementById('mc-jump-btn');
+  autoRouteInProgress = true;
+  if (btn) { btn.textContent = 'Routing...'; btn.disabled = true; }
+
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+  logResponse(`<span class="resp-cmd">${ts} > find_route to ${esc(target)}</span>`);
+
+  sendExec(profileBot, 'find_route', { target_system: target }, async (result) => {
+    if (!result.ok || !result.data) {
+      logResponse(`<span class="resp-err">Route failed: ${esc(result.error || 'no route data')}</span>`);
+      autoRouteInProgress = false;
+      if (btn) { btn.textContent = 'Route'; btn.disabled = false; }
+      return;
+    }
+
+    const d = result.data;
+    const route = d.route || d.path || d.systems || d.hops || [];
+    if (!route.length) {
+      logResponse(`<span class="resp-err">No route found to ${esc(target)}</span>`);
+      autoRouteInProgress = false;
+      if (btn) { btn.textContent = 'Route'; btn.disabled = false; }
+      return;
+    }
+
+    // Route is an array of system IDs — first entry is current system, skip it
+    const allHops = route.map(h => typeof h === 'string' ? h : (h.system_id || h.id || h));
+    const bot = getProfileBot();
+    const currentSys = bot ? (bot.system || '') : '';
+    const hops = allHops[0] === currentSys ? allHops.slice(1) : allHops;
+    logResponse(`<span class="resp-ok">Route: ${allHops.map(h => esc(String(h))).join(' → ')} (${hops.length} jump${hops.length !== 1 ? 's' : ''})</span>`);
+
+    for (let i = 0; i < hops.length; i++) {
+      const hop = hops[i];
+      if (!hop || typeof hop !== 'string') continue;
+
+      if (btn) btn.textContent = `${i + 1}/${hops.length}...`;
+      const hopTs = new Date().toLocaleTimeString('en-US', { hour12: false });
+      logResponse(`<span class="resp-cmd">${hopTs} > jump ${esc(hop)} (${i + 1}/${hops.length})</span>`);
+
+      const jumpOk = await new Promise(resolve => {
+        sendExec(profileBot, 'jump', { target_system: hop }, (jr) => {
+          if (jr.ok) {
+            logResponse(`<span class="resp-ok">Arrived in ${esc(hop)}</span>`);
+            resolve(true);
+          } else {
+            logResponse(`<span class="resp-err">Jump failed: ${esc(jr.error || 'unknown')}</span>`);
+            resolve(false);
+          }
+        });
+      });
+
+      if (!jumpOk) break;
+
+      // Brief pause between jumps
+      if (i < hops.length - 1) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    logResponse(`<span class="resp-ok">Route complete</span>`);
+    autoRouteInProgress = false;
+    if (btn) { btn.textContent = 'Route'; btn.disabled = false; }
+
+    // Refresh system data for new location
+    setTimeout(() => {
+      if (profileBot) {
+        fetchSystemData(profileBot);
+        renderProfileSidebar();
+        renderManualControls();
+      }
+    }, 2000);
+  });
+}
+
+function syncQty(sel, qtyId) {
+  const opt = sel.options[sel.selectedIndex];
+  const max = parseInt(opt?.getAttribute('data-max')) || 1;
+  document.getElementById(qtyId).value = max;
+}
+
+function syncBuyInfo() {
+  const sel = document.getElementById('mc-buy-item');
+  const info = document.getElementById('mc-buy-info');
+  if (!sel || !info) return;
+  const opt = sel.options[sel.selectedIndex];
+  const price = opt?.getAttribute('data-price');
+  const stock = opt?.getAttribute('data-stock');
+  const parts = [];
+  if (price) parts.push(`${Number(price).toLocaleString()}cr each`);
+  if (stock) parts.push(`${stock} in stock`);
+  info.textContent = parts.join(' · ');
+}
+
+// Execute a manual command through the profile bot
+// ── Response formatters ─────────────────────────────────────
+function formatResult(cmd, data) {
+  if (!data) return '';
+  try {
+    const f = FORMATTERS[cmd];
+    if (f) return '\n<span class="resp-data">' + f(data) + '</span>';
+    // Default: compact summary for objects
+    return '\n<span class="resp-data">' + formatGeneric(data) + '</span>';
+  } catch {
+    return '\n<span class="resp-data">' + esc(JSON.stringify(data, null, 2)) + '</span>';
+  }
+}
+
+function formatGeneric(d) {
+  if (typeof d !== 'object' || d === null) return esc(String(d));
+  if (Array.isArray(d)) {
+    if (d.length === 0) return '(empty list)';
+    if (d.length <= 5) return d.map(formatGeneric).join('\n');
+    return d.slice(0, 5).map(formatGeneric).join('\n') + `\n... and ${d.length - 5} more`;
+  }
+  // Object: show key-value pairs, skip large nested arrays
+  const lines = [];
+  for (const [k, v] of Object.entries(d)) {
+    if (Array.isArray(v) && v.length > 3) {
+      lines.push(`${esc(k)}: [${v.length} items]`);
+    } else if (typeof v === 'object' && v !== null) {
+      lines.push(`${esc(k)}: ${esc(JSON.stringify(v))}`);
+    } else {
+      lines.push(`${esc(k)}: ${esc(String(v))}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+const FORMATTERS = {
+  dock(d) {
+    const action = d.action || 'docked';
+    const players = d.online_players || [];
+    let s = esc(action);
+    if (players.length > 0) {
+      s += ` | ${players.length} players online`;
+      const names = players.slice(0, 8).map(p => {
+        const tag = p.clan_tag ? `[${p.clan_tag}] ` : '';
+        return esc(tag + p.username);
+      });
+      s += '\n  ' + names.join(', ');
+      if (players.length > 8) s += `, +${players.length - 8} more`;
+    }
+    return s;
+  },
+
+  undock(d) {
+    return esc(d.action || d.message || 'undocked');
+  },
+
+  travel(d) {
+    const action = d.action || '';
+    const dest = d.destination || d.poi || '';
+    return esc(`${action}${dest ? ' -> ' + dest : ''}`);
+  },
+
+  jump(d) {
+    const dest = d.destination || d.system || d.target_system || '';
+    return esc(`Jumped${dest ? ' to ' + dest : ''}`);
+  },
+
+  find_route(d) {
+    const route = d.route || d.path || d.systems || d.hops || [];
+    if (!route.length) return 'No route found';
+    const hops = route.map(h => typeof h === 'string' ? h : (h.system_id || h.id || h.name || h));
+    return `Route (${hops.length} hops): ${hops.map(h => esc(String(h))).join(' → ')}`;
+  },
+
+  mine(d) {
+    const item = d.item || d.ore || d.mined;
+    if (item && typeof item === 'object') {
+      const name = item.name || item.item_id || 'ore';
+      const qty = item.quantity || 1;
+      return `Mined ${esc(String(qty))}x ${esc(name)}`;
+    }
+    return formatGeneric(d);
+  },
+
+  sell(d) {
+    const item = d.item_id || d.item || '';
+    const qty = d.quantity || '';
+    const earned = d.credits_earned || d.total || '';
+    let s = `Sold ${qty ? qty + 'x ' : ''}${esc(String(item))}`;
+    if (earned) s += ` for ${Number(earned).toLocaleString()}cr`;
+    return s;
+  },
+
+  buy(d) {
+    const item = d.item_id || d.item || '';
+    const qty = d.quantity || '';
+    const cost = d.credits_spent || d.total || '';
+    let s = `Bought ${qty ? qty + 'x ' : ''}${esc(String(item))}`;
+    if (cost) s += ` for ${Number(cost).toLocaleString()}cr`;
+    return s;
+  },
+
+  send_gift(d) {
+    const lines = [d.message || 'Gift sent'];
+    const cr = d.credits_transferred || d.credits_sent || d.credits || 0;
+    if (cr) lines.push(`Credits sent: ${Number(cr).toLocaleString()}cr`);
+    const items = d.items_sent || d.items || [];
+    if (Array.isArray(items) && items.length > 0) {
+      for (const i of items) {
+        lines.push(`Sent: ${i.quantity || 1}x ${esc(i.name || i.item_id || '?')}`);
+      }
+    }
+    if (d.recipient) lines.push(`To: ${esc(d.recipient)}`);
+    lines.push('(Credits go to recipient storage — they must withdraw)');
+    // Also dump raw data for debugging
+    lines.push('Raw: ' + esc(JSON.stringify(d)));
+    return lines.join('\n');
+  },
+
+  refuel(d) {
+    const fuel = d.fuel || d.fuel_added || '';
+    const cost = d.credits_spent || d.cost || '';
+    let s = 'Refueled';
+    if (fuel) s += ` +${fuel} fuel`;
+    if (cost) s += ` (${Number(cost).toLocaleString()}cr)`;
+    return s;
+  },
+
+  repair(d) {
+    const hull = d.hull_repaired || d.hull || '';
+    const cost = d.credits_spent || d.cost || '';
+    let s = 'Repaired';
+    if (hull) s += ` +${hull} hull`;
+    if (cost) s += ` (${Number(cost).toLocaleString()}cr)`;
+    return s;
+  },
+
+  scan(d) {
+    const results = d.results || d.objects || d.ships || [];
+    if (Array.isArray(results) && results.length > 0) {
+      const lines = results.slice(0, 10).map(r => {
+        const name = r.name || r.username || r.type || 'unknown';
+        const dist = r.distance ? ` (${r.distance})` : '';
+        return `  ${esc(name)}${esc(dist)}`;
+      });
+      let s = `Found ${results.length} objects:\n` + lines.join('\n');
+      if (results.length > 10) s += `\n  ... +${results.length - 10} more`;
+      return s;
+    }
+    return formatGeneric(d);
+  },
+
+  get_cargo(d) {
+    const items = Array.isArray(d) ? d : (d.items || d.cargo || []);
+    if (!items.length) return 'Cargo is empty';
+    return items.map(i => `  ${esc(i.name || i.item_id)} x${i.quantity}`).join('\n');
+  },
+
+  view_storage(d) {
+    const items = Array.isArray(d) ? d : (d.items || d.storage || []);
+    if (!items.length) return 'Storage is empty';
+    return items.map(i => `  ${esc(i.name || i.item_id)} x${i.quantity}`).join('\n');
+  },
+
+  view_market(d) {
+    const items = d.items || d.market || d.listings || [];
+    if (!Array.isArray(items) || !items.length) return formatGeneric(d);
+    const lines = items.slice(0, 20).map(i => {
+      const name = i.name || i.item_id || '?';
+      const buy = i.buy_price != null ? `buy:${i.buy_price}` : '';
+      const sell = i.sell_price != null ? `sell:${i.sell_price}` : '';
+      const stock = i.stock != null ? `qty:${i.stock}` : '';
+      return `  ${esc(name)}  ${[buy, sell, stock].filter(Boolean).join(' | ')}`;
+    });
+    let s = `${items.length} items:\n` + lines.join('\n');
+    if (items.length > 20) s += `\n  ... +${items.length - 20} more`;
+    return s;
+  },
+
+  get_status(d) {
+    const p = d.player || d;
+    const ship = d.ship || {};
+    const lines = [];
+    if (p.username) lines.push(`Player: ${esc(p.username)}`);
+    if (p.credits != null) lines.push(`Credits: ${Number(p.credits).toLocaleString()}`);
+    if (p.current_system) lines.push(`System: ${esc(p.current_system)}`);
+    if (p.current_poi) lines.push(`POI: ${esc(p.current_poi)}`);
+    if (p.docked_at_base) lines.push(`Docked: ${esc(p.docked_at_base)}`);
+    if (ship.name || ship.ship_type) lines.push(`Ship: ${esc(ship.name || ship.ship_type)}`);
+    if (ship.fuel != null) lines.push(`Fuel: ${ship.fuel}/${ship.max_fuel || '?'}`);
+    if (ship.cargo_used != null) lines.push(`Cargo: ${ship.cargo_used}/${ship.cargo_capacity || '?'}`);
+    if (ship.hull != null) lines.push(`Hull: ${ship.hull}/${ship.max_hull || '?'}`);
+    return lines.join('\n');
+  },
+
+  get_system(d) {
+    const sys = d.system || d;
+    const lines = [];
+    if (sys.name) lines.push(`System: ${esc(sys.name)} (${esc(sys.id || '')})`);
+    const pois = sys.pois || d.pois || [];
+    if (pois.length) {
+      lines.push(`POIs (${pois.length}):`);
+      for (const p of pois) lines.push(`  ${esc(p.name || p.id)} [${esc(p.type || '')}]`);
+    }
+    const conns = sys.connections || sys.jump_gates || [];
+    if (conns.length) {
+      lines.push(`Connections (${conns.length}):`);
+      for (const c of conns) lines.push(`  -> ${esc(c.name || c.id)}`);
+    }
+    return lines.join('\n');
+  },
+
+  get_nearby(d) {
+    const objects = d.objects || d.nearby || d.ships || [];
+    if (Array.isArray(objects) && objects.length) {
+      return objects.slice(0, 15).map(o => {
+        const name = o.name || o.username || o.type || '?';
+        const type = o.type ? ` [${o.type}]` : '';
+        return `  ${esc(name)}${esc(type)}`;
+      }).join('\n');
+    }
+    return formatGeneric(d);
+  },
+
+  deposit_items(d) { return esc(d.message || 'Deposited'); },
+  withdraw_items(d) { return esc(d.message || 'Withdrawn'); },
+  send_gift(d) { return esc(d.message || 'Gift sent'); },
+  trade_offer(d) { return esc(d.message || 'Trade offer sent'); },
+
+  craft(d) {
+    const item = d.item || d.output || d.result || d.crafted || {};
+    const name = item.name || item.item_name || item.item_id || d.item_name || d.item_id || d.recipe_id || 'item';
+    const qty = item.quantity || item.count || d.quantity || d.count || 1;
+    const quality = item.quality || d.quality || '';
+    const msg = d.message || '';
+    if (msg) return esc(msg);
+    let s = `Crafted ${qty}x ${esc(name)}`;
+    if (quality) s += ` (${esc(String(quality))} quality)`;
+    return s;
+  },
+
+  get_recipes(d) {
+    const recipes = Array.isArray(d) ? d : (d.recipes || []);
+    if (!recipes.length) return 'No recipes available';
+    return recipes.map(r => {
+      const name = r.name || r.recipe_id || '?';
+      const comps = r.components || r.ingredients || r.inputs || r.materials || [];
+      const needs = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
+      return `  ${esc(name)}: ${esc(needs)}`;
+    }).join('\n');
+  },
+};
+
+function mcExec(command, params) {
+  if (!profileBot) return;
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const paramStr = params ? ' ' + JSON.stringify(params) : '';
+  logResponse(`<span class="resp-cmd">${ts} > ${esc(command)}${esc(paramStr)}</span>`);
+
+  sendExec(profileBot, command, params, (result) => {
+    if (result.ok) {
+      logResponse(`<span class="resp-ok">OK</span>` + formatResult(command, result.data));
+    } else {
+      logResponse(`<span class="resp-err">Error: ${esc(result.error || 'unknown')}</span>`);
+    }
+
+    // Refresh profile after commands that change state
+    setTimeout(() => {
+      renderProfileSidebar();
+      renderManualControls();
+    }, 500);
+
+    // Refresh system/market data after location or trade changes
+    if (['jump', 'dock', 'undock', 'travel', 'buy', 'sell'].includes(command) && result.ok) {
+      setTimeout(() => {
+        if (profileBot) {
+          fetchSystemData(profileBot);
+          fetchMarket(profileBot);
+        }
+      }, 1000);
+    }
+  });
+}
+
+function mcExecCustom() {
+  const cmd = val('mc-custom-cmd');
+  if (!cmd) return;
+  let params = undefined;
+  const raw = val('mc-custom-params').trim();
+  if (raw) {
+    try { params = JSON.parse(raw); } catch (e) {
+      logResponse(`<span class="resp-err">Invalid JSON params: ${esc(e.message)}</span>`);
+      return;
+    }
+  }
+  mcExec(cmd, params);
+}
+
+// Send exec command and invoke callback with result
+let execCallbacks = {};
+let execSeq = 0;
+
+function sendExec(botName, command, params, callback) {
+  const seq = ++execSeq;
+  if (callback) execCallbacks[seq] = callback;
+  const msg = { type: 'exec', bot: botName, command, params, _seq: seq };
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function handleExecResult(msg) {
+  // Try to match callback
+  if (msg._seq && execCallbacks[msg._seq]) {
+    execCallbacks[msg._seq](msg);
+    delete execCallbacks[msg._seq];
+  }
+}
+
+function logResponse(html) {
+  const log = document.getElementById('responseLog');
+  const div = document.createElement('div');
+  div.className = 'resp-entry';
+  div.innerHTML = html;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearResponseLog() {
+  document.getElementById('responseLog').innerHTML = '';
+}
+
+// Fetch system POIs and connections for travel dropdowns
+function fetchSystemData(username) {
+  sendExec(username, 'get_system', undefined, (result) => {
+    if (!result.ok || !result.data) return;
+    const d = result.data;
+    const sysObj = d.system || d;
+    const pois = sysObj.pois || d.pois || [];
+    const connections = sysObj.connections || sysObj.jump_gates || d.connections || [];
+    profileSystemData = { pois, connections };
+    if (profileBot === username) renderManualControls();
+  });
+}
+
+function fetchMarket(username) {
+  sendExec(username, 'view_market', undefined, (result) => {
+    if (!result.ok || !result.data) { profileMarket = []; return; }
+    const d = result.data;
+    const items = Array.isArray(d) ? d : (d.items || d.market || d.listings || []);
+    profileMarket = items
+      .map(i => ({
+        item_id: i.item_id || i.id || '',
+        name: i.name || i.item_id || i.id || '?',
+        buy_price: i.buy_price ?? i.price ?? null,
+        sell_price: i.sell_price ?? null,
+        stock: i.stock ?? i.quantity ?? null,
+      }))
+      .filter(i => i.item_id && i.buy_price != null)
+      .sort((a, b) => (a.buy_price || 0) - (b.buy_price || 0));
+    if (profileBot === username) renderManualControls();
+  });
+}
+
+function fetchSkills(username) {
+  sendExec(username, 'get_skills', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      profileSkillsList = [];
+      profileSkills = {};
+      if (profileBot === username) renderProfileSidebar();
+      return;
+    }
+    const d = result.data;
+    const skills = Array.isArray(d) ? d : (d.skills || d.player_skills || []);
+    profileSkills = {};
+    profileSkillsList = skills;
+    for (const s of skills) {
+      const id = s.skill_id || s.id || s.name || '';
+      if (id) profileSkills[id] = s.level || 0;
+      if (s.name && s.name !== id) profileSkills[s.name] = s.level || 0;
+    }
+    if (profileBot === username) {
+      renderProfileSidebar();
+      renderManualControls();
+    }
+  });
+}
+
+function fetchRecipes(username) {
+  sendExec(username, 'get_recipes', undefined, (result) => {
+    if (!result.ok && !result.data) {
+      logResponse(`<span class="resp-cmd">get_recipes</span> <span class="resp-err">${esc(result.error || 'failed')}</span>`);
+      profileRecipes = [];
+      if (profileBot === username) renderManualControls();
+      return;
+    }
+    const d = result.data || {};
+    profileRecipes = extractRecipes(d);
+    logResponse(`<span class="resp-cmd">get_recipes</span> <span class="resp-ok">Found ${profileRecipes.length} recipes</span>`);
+    if (profileBot === username) renderManualControls();
+  });
+}
+
+/** Extract recipes from API response — handles both array and object-keyed formats. */
+function extractRecipes(d) {
+  // Direct array
+  if (Array.isArray(d)) return d;
+  if (typeof d !== 'object' || d === null) return [];
+
+  // Try known keys
+  for (const key of ['recipes', 'items', 'available', 'catalog']) {
+    const val = d[key];
+    if (Array.isArray(val)) return val;
+    // Object-keyed: { recipe_id: { id, name, inputs, ... }, ... }
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const entries = Object.values(val);
+      if (entries.length > 0 && typeof entries[0] === 'object') return entries;
+    }
+  }
+  return [];
+}
+
+/** Check if a recipe can be crafted with current resources and skills. */
+function canCraft(recipe, have) {
+  // Check components
+  const comps = recipe.components || recipe.ingredients || recipe.inputs || recipe.materials || [];
+  for (const c of comps) {
+    const cId = c.item_id || c.id || '';
+    const need = c.quantity || 1;
+    if ((have[cId] || 0) < need) return false;
+  }
+  // Check skill requirement
+  const skill = recipe.required_skill || recipe.skill;
+  if (skill) {
+    const sId = skill.skill_id || skill.id || skill.name || '';
+    const sLevel = skill.level || skill.min_level || 0;
+    if (sId && sLevel > 0) {
+      // Match by skill_id or name
+      const myLevel = profileSkills[sId] || profileSkills[skill.name] || 0;
+      if (myLevel < sLevel) return false;
+    }
+  }
+  return true;
+}
+
+/** Build a map of owned items: { item_id: total_quantity } from cargo + storage. */
+function getOwnedItems(bot) {
+  const have = {};
+  if (bot) {
+    for (const i of (bot.inventory || [])) have[i.itemId] = (have[i.itemId] || 0) + i.quantity;
+    for (const i of (bot.storage || [])) have[i.itemId] = (have[i.itemId] || 0) + i.quantity;
+  }
+  return have;
+}
+
+function startBotFromProfile() {
+  const sel = document.getElementById('profile-routine');
+  const routine = sel ? sel.value : 'miner';
+  send({ type: 'start', bot: profileBot, routine });
+}
+
+// ── Map ────────────────────────────────────────────────────
+const expandedSystems = new Set();
+
+function renderMapPage() {
+  buildOreFilters();
+  renderMapStats();
+  renderMap();
+}
+
+function renderMapStats() {
+  const bar = document.getElementById('mapStatsBar');
+  if (!bar) return;
+  const systems = Object.values(mapData);
+  const totalPois = systems.reduce((s, sys) => s + (sys.pois || []).length, 0);
+  const totalBelts = systems.reduce((s, sys) => s + (sys.pois || []).filter(p => (p.type || '').toLowerCase().includes('asteroid')).length, 0);
+  const totalStations = systems.reduce((s, sys) => s + (sys.pois || []).filter(p => p.has_base).length, 0);
+  const totalOres = new Set();
+  systems.forEach(sys => (sys.pois || []).forEach(p => (p.ores_found || []).forEach(o => totalOres.add(o.item_id))));
+  bar.innerHTML = `
+    <span>Systems: <span class="stat-val">${systems.length}</span></span>
+    <span>POIs: <span class="stat-val">${totalPois}</span></span>
+    <span>Belts: <span class="stat-val">${totalBelts}</span></span>
+    <span>Stations: <span class="stat-val">${totalStations}</span></span>
+    <span>Ores: <span class="stat-val">${totalOres.size}</span></span>
+  `;
+}
+
+function buildOreFilters() {
+  const ores = new Map();
+  for (const sys of Object.values(mapData)) {
+    for (const poi of (sys.pois || [])) {
+      for (const ore of (poi.ores_found || [])) {
+        if (ore.item_id && !ores.has(ore.item_id)) {
+          ores.set(ore.item_id, ore.name || ore.item_id);
+        }
+      }
+    }
+  }
+  const container = document.getElementById('oreFilterList');
+  if (!container) return;
+  if (ores.size === 0) {
+    container.innerHTML = '<span style="font-size:11px;color:var(--text-dim)">No resource data yet</span>';
+    return;
+  }
+  const sorted = [...ores.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  container.innerHTML = sorted.map(([id, name]) => {
+    const active = activeOreFilters.has(id) ? ' active' : '';
+    return `<div class="ore-chip${active}" onclick="toggleOreFilter('${esc(id)}')">${esc(name)}</div>`;
+  }).join('') + `<div class="ore-chip${activeOreFilters.size === 0 ? ' active' : ''}" onclick="clearOreFilters()">All</div>`;
+}
+
+function toggleOreFilter(oreId) {
+  if (activeOreFilters.has(oreId)) activeOreFilters.delete(oreId);
+  else activeOreFilters.add(oreId);
+  buildOreFilters();
+  renderMap();
+}
+
+function clearOreFilters() {
+  activeOreFilters.clear();
+  buildOreFilters();
+  renderMap();
+}
+
+function toggleSystem(sysId) {
+  if (expandedSystems.has(sysId)) expandedSystems.delete(sysId);
+  else expandedSystems.add(sysId);
+  renderMap();
+}
+
+/** Relative time string from ISO timestamp. */
+function timeAgo(isoStr) {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  if (diff < 0) return 'just now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function securityBadge(level) {
+  if (!level) return '<span class="badge badge-null">Unknown</span>';
+  const lc = level.toLowerCase();
+  if (lc.includes('high') || lc.includes('safe') || lc.includes('secure')) return `<span class="badge badge-high">${esc(level)}</span>`;
+  if (lc.includes('low') || lc.includes('danger') || lc.includes('lawless') || lc.includes('null')) return `<span class="badge badge-low">${esc(level)}</span>`;
+  return `<span class="badge badge-medium">${esc(level)}</span>`;
+}
+
+function securityOrder(level) {
+  if (!level) return 3;
+  const lc = level.toLowerCase();
+  if (lc.includes('high') || lc.includes('safe')) return 0;
+  if (lc.includes('low') || lc.includes('danger') || lc.includes('lawless')) return 2;
+  return 1;
+}
+
+function poiIcon(type) {
+  const t = (type || '').toLowerCase();
+  if (t.includes('asteroid')) return '&#9670;'; // diamond
+  if (t.includes('station') || t.includes('base')) return '&#9632;'; // square
+  if (t.includes('planet')) return '&#9679;'; // circle
+  if (t.includes('gate') || t.includes('jump')) return '&#10140;'; // arrow
+  if (t.includes('anomaly')) return '&#10038;'; // star
+  return '&#8226;'; // bullet
+}
+
+function renderMap() {
+  const container = document.getElementById('mapContent');
+  if (!container) return;
+
+  const systems = Object.values(mapData);
+  if (systems.length === 0) {
+    container.innerHTML = '<div class="map-empty">No map data yet. Start a bot to begin exploring!</div>';
+    return;
+  }
+
+  const searchTerm = (document.getElementById('mapSearch')?.value || '').toLowerCase();
+  const filterOres = activeOreFilters.size > 0;
+  const secFilter = document.getElementById('mapSecFilter')?.value || '';
+  const sortBy = document.getElementById('mapSortBy')?.value || 'name';
+
+  // Filter systems
+  let filtered = systems.filter(sys => {
+    const sysName = (sys.name || sys.id || '').toLowerCase();
+    if (searchTerm && !sysName.includes(searchTerm) && !(sys.id || '').toLowerCase().includes(searchTerm)) return false;
+
+    if (filterOres) {
+      const hasOre = (sys.pois || []).some(poi =>
+        (poi.ores_found || []).some(o => activeOreFilters.has(o.item_id))
+      );
+      if (!hasOre) return false;
+    }
+
+    if (secFilter) {
+      const sl = (sys.security_level || '').toLowerCase();
+      if (secFilter === 'unknown' && sl) return false;
+      if (secFilter === 'high' && !sl.includes('high') && !sl.includes('safe') && !sl.includes('secure')) return false;
+      if (secFilter === 'medium' && (sl.includes('high') || sl.includes('safe') || sl.includes('low') || sl.includes('danger') || sl.includes('lawless') || !sl)) return false;
+      if (secFilter === 'low' && !sl.includes('low') && !sl.includes('danger') && !sl.includes('lawless') && !sl.includes('null')) return false;
+    }
+
+    return true;
+  });
+
+  // Sort
+  filtered.sort((a, b) => {
+    if (sortBy === 'name') return (a.name || a.id || '').localeCompare(b.name || b.id || '');
+    if (sortBy === 'updated') return (b.last_updated || '').localeCompare(a.last_updated || '');
+    if (sortBy === 'pois') return (b.pois || []).length - (a.pois || []).length;
+    if (sortBy === 'security') return securityOrder(a.security_level) - securityOrder(b.security_level);
+    return 0;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="map-empty">${searchTerm || filterOres || secFilter ? 'No systems match your filters' : 'No map data yet'}</div>`;
+    return;
+  }
+
+  let html = '';
+  for (const sys of filtered) {
+    const sysId = sys.id || '';
+    const expanded = expandedSystems.has(sysId);
+    const pois = sys.pois || [];
+    const belts = pois.filter(p => (p.type || '').toLowerCase().includes('asteroid'));
+    const stations = pois.filter(p => p.has_base);
+    const conns = sys.connections || [];
+    const pirates = sys.pirate_sightings || [];
+    const wrecks = sys.wrecks || [];
+
+    html += `<div class="sys-card${expanded ? ' expanded' : ''}" id="sys-${esc(sysId)}">`;
+
+    // Header
+    html += `<div class="sys-header" onclick="toggleSystem('${esc(sysId)}')">`;
+    html += `<span class="sys-chevron">&#9654;</span>`;
+    html += `<span class="sys-name">${esc(sys.name || sysId)}</span>`;
+    html += `<div class="sys-badges">${securityBadge(sys.security_level)}</div>`;
+    html += `<div class="sys-summary">`;
+    html += `<span>${pois.length} POI${pois.length !== 1 ? 's' : ''}</span>`;
+    if (belts.length) html += `<span>${belts.length} belt${belts.length !== 1 ? 's' : ''}</span>`;
+    if (stations.length) html += `<span>${stations.length} station${stations.length !== 1 ? 's' : ''}</span>`;
+    html += `<span>${conns.length} jump${conns.length !== 1 ? 's' : ''}</span>`;
+    if (pirates.length) html += `<span style="color:var(--red)">${pirates.length} pirate${pirates.length !== 1 ? 's' : ''}</span>`;
+    html += `</div>`;
+    html += `<span class="sys-updated">${timeAgo(sys.last_updated)}</span>`;
+    html += `</div>`;
+
+    // Body
+    html += `<div class="sys-body">`;
+
+    // Connections
+    if (conns.length > 0) {
+      html += `<div class="sys-connections">`;
+      html += `<span class="conn-label">Connections</span>`;
+      for (const c of conns) {
+        const cName = c.system_name || c.system_id || '';
+        const cSec = c.security_level ? ` (${c.security_level})` : '';
+        html += `<span class="conn-chip">${esc(cName)}${esc(cSec)}</span>`;
+      }
+      html += `</div>`;
+    }
+
+    // POIs
+    for (const poi of pois) {
+      if (filterOres && !poi.has_base) {
+        const hasMatch = (poi.ores_found || []).some(o => activeOreFilters.has(o.item_id));
+        if (!hasMatch) continue;
+      }
+
+      const pType = (poi.type || '').toLowerCase();
+      html += `<div class="poi-card">`;
+      html += `<div class="poi-head">`;
+      html += `<span class="poi-icon">${poiIcon(poi.type)}</span>`;
+      html += `<span class="poi-name">${esc(poi.name || poi.id)}</span>`;
+      html += `<span class="poi-type-badge">${esc(poi.type)}</span>`;
+      if (poi.has_base) html += `<span class="poi-base-name">${esc(poi.base_name || 'Station')}</span>`;
+      if (poi.last_explored) {
+        html += `<span class="mkt-age" style="margin-left:auto">explored ${timeAgo(poi.last_explored)}</span>`;
+      } else {
+        html += `<span class="mkt-age" style="margin-left:auto;color:var(--yellow)">unexplored</span>`;
+      }
+      html += `</div>`;
+
+      // Ores
+      if (poi.ores_found && poi.ores_found.length > 0) {
+        html += `<div class="poi-section">`;
+        html += `<div class="poi-section-title">Resources Mined</div>`;
+        html += `<div class="poi-ore-list">`;
+        for (const ore of poi.ores_found) {
+          const hl = filterOres && activeOreFilters.has(ore.item_id) ? ' highlight' : '';
+          html += `<span class="poi-ore-tag${hl}">${esc(ore.name)} x${ore.total_mined}</span>`;
+        }
+        html += `</div></div>`;
+      }
+
+      // Market
+      if (poi.market && poi.market.length > 0) {
+        const mktId = `mkt-${esc(sysId)}-${esc(poi.id)}`;
+        html += `<div class="poi-section">`;
+        html += `<div class="poi-section-title">Market Prices</div>`;
+        html += `<table class="mkt-table"><thead><tr><th>Item</th><th>Buy</th><th>Sell</th><th>Updated</th></tr></thead><tbody>`;
+        const showAll = poi.market.length <= 8;
+        const visible = showAll ? poi.market : poi.market.slice(0, 5);
+        for (const m of visible) {
+          html += `<tr>`;
+          html += `<td>${esc(m.item_name || m.item_id)}</td>`;
+          html += `<td class="mkt-buy">${m.best_buy != null ? m.best_buy.toLocaleString() + ' cr' : '-'}</td>`;
+          html += `<td class="mkt-sell">${m.best_sell != null ? m.best_sell.toLocaleString() + ' cr' : '-'}</td>`;
+          html += `<td class="mkt-age">${timeAgo(m.last_updated)}</td>`;
+          html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+        if (!showAll) {
+          html += `<span class="mkt-expand-btn" onclick="this.parentElement.querySelector('.mkt-hidden').style.display='block';this.style.display='none'">Show ${poi.market.length - 5} more...</span>`;
+          html += `<div class="mkt-hidden" style="display:none"><table class="mkt-table"><tbody>`;
+          for (const m of poi.market.slice(5)) {
+            html += `<tr>`;
+            html += `<td>${esc(m.item_name || m.item_id)}</td>`;
+            html += `<td class="mkt-buy">${m.best_buy != null ? m.best_buy.toLocaleString() + ' cr' : '-'}</td>`;
+            html += `<td class="mkt-sell">${m.best_sell != null ? m.best_sell.toLocaleString() + ' cr' : '-'}</td>`;
+            html += `<td class="mkt-age">${timeAgo(m.last_updated)}</td>`;
+            html += `</tr>`;
+          }
+          html += `</tbody></table></div>`;
+        }
+        html += `</div>`;
+      }
+
+      // Player orders
+      if (poi.orders && poi.orders.length > 0) {
+        html += `<div class="poi-section">`;
+        html += `<div class="poi-section-title">Player Orders</div>`;
+        html += `<table class="ord-table"><thead><tr><th>Type</th><th>Item</th><th>Qty</th><th>Price</th><th>Player</th><th>Seen</th></tr></thead><tbody>`;
+        for (const o of poi.orders) {
+          const cls = o.order_type === 'buy' ? 'ord-buy' : 'ord-sell';
+          html += `<tr>`;
+          html += `<td class="${cls}">${o.order_type.toUpperCase()}</td>`;
+          html += `<td>${esc(o.item_name || o.item_id)}</td>`;
+          html += `<td>${o.quantity}</td>`;
+          html += `<td>${o.price.toLocaleString()} cr</td>`;
+          html += `<td>${esc(o.player_name || '-')}</td>`;
+          html += `<td class="mkt-age">${timeAgo(o.last_seen)}</td>`;
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div>`;
+      }
+
+      // Missions
+      if (poi.missions && poi.missions.length > 0) {
+        html += `<div class="poi-section">`;
+        html += `<div class="poi-section-title">Available Missions</div>`;
+        html += `<table class="mkt-table"><thead><tr><th>Mission</th><th>Type</th><th>Reward</th><th>Seen</th></tr></thead><tbody>`;
+        for (const m of poi.missions) {
+          const reward = m.reward_credits ? `${m.reward_credits.toLocaleString()} cr` : (m.reward_items || '-');
+          html += `<tr>`;
+          html += `<td title="${esc(m.description || '')}">${esc(m.title || m.mission_id)}</td>`;
+          html += `<td>${esc(m.type || '-')}</td>`;
+          html += `<td class="mkt-buy">${reward}</td>`;
+          html += `<td class="mkt-age">${timeAgo(m.last_seen)}</td>`;
+          html += `</tr>`;
+        }
+        html += `</tbody></table></div>`;
+      }
+
+      html += `</div>`; // poi-card
+    }
+
+    // Pirates & Wrecks
+    if (pirates.length > 0 || wrecks.length > 0) {
+      html += `<div class="sys-danger">`;
+      if (pirates.length > 0) {
+        const pList = pirates.map(p => `${esc(p.name || 'Unknown')} (x${p.count})`).join(', ');
+        html += `<div class="danger-group danger-pirates"><span class="icon">&#9888;</span> Pirates: ${pList}</div>`;
+      }
+      if (wrecks.length > 0) {
+        html += `<div class="danger-group danger-wrecks"><span class="icon">&#9760;</span> ${wrecks.length} wreck${wrecks.length !== 1 ? 's' : ''}</div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`; // sys-body
+    html += `</div>`; // sys-card
+  }
+
+  container.innerHTML = html;
+}
+
+// ── Settings ───────────────────────────────────────────────
+function switchSettingsTab(name) {
+  activeSettingsTab = name;
+  document.querySelectorAll('.settings-sidebar .sidebar-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.sidebar-item[onclick*="${name}"]`).classList.add('active');
+  renderSettingsPanel();
+}
+
+function renderSettingsPanel() {
+  const panel = document.getElementById('settingsContent');
+  if (activeSettingsTab === 'miner') {
+    renderMinerSettings(panel);
+  } else if (activeSettingsTab === 'crafter') {
+    renderCrafterSettings(panel);
+  } else if (activeSettingsTab === 'rescue') {
+    renderRescueSettings(panel);
+  } else if (activeSettingsTab === 'explorer') {
+    renderExplorerSettings(panel);
+  }
+}
+
+function renderMinerSettings(panel) {
+  const miner = settings.miner || {};
+  const currentSystem = miner.system || '';
+  const depositBot = miner.depositBot || '';
+  const cargoThreshold = miner.cargoThreshold ?? 80;
+  const refuelThreshold = miner.refuelThreshold ?? 50;
+  const repairThreshold = miner.repairThreshold ?? 40;
+  const sellOre = miner.sellOre ?? false;
+  const targetOre = miner.targetOre || '';
+
+  const systemOpts = ['<option value="">(current system)</option>'];
+  for (const sys of knownSystems) {
+    const sel = sys.id === currentSystem ? ' selected' : '';
+    const label = sys.name ? `${sys.name} (${sys.id})` : sys.id;
+    systemOpts.push(`<option value="${esc(sys.id)}"${sel}>${esc(label)}</option>`);
+  }
+  if (currentSystem && !knownSystems.find(s => s.id === currentSystem)) {
+    systemOpts.push(`<option value="${esc(currentSystem)}" selected>${esc(currentSystem)}</option>`);
+  }
+
+  const oreOpts = ['<option value="">(any ore — mine whatever is available)</option>'];
+  for (const ore of knownOres) {
+    const sel = ore.item_id === targetOre ? ' selected' : '';
+    oreOpts.push(`<option value="${esc(ore.item_id)}"${sel}>${esc(ore.name)}</option>`);
+  }
+  if (targetOre && !knownOres.find(o => o.item_id === targetOre)) {
+    oreOpts.push(`<option value="${esc(targetOre)}" selected>${esc(targetOre)}</option>`);
+  }
+
+  const botOpts = ['<option value="">(none - keep in own cargo)</option>'];
+  for (const bot of bots) {
+    const sel = bot.username === depositBot ? ' selected' : '';
+    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  }
+
+  panel.innerHTML = `
+    <h3>Miner Settings</h3>
+    <div class="settings-desc">Configure how mining bots operate. Changes apply to all bots started with the Miner routine.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Target Ore</div>
+        <div class="setting-hint">Seek out a specific ore type. Bot will travel to the best known location on the map, mine it, and return home. Requires Explorer to have mapped ore locations first.</div>
+      </div>
+      <select id="set-miner-targetOre">${oreOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Mining System</div>
+        <div class="setting-hint">Override system to mine in (ignored if Target Ore is set). Bot will jump there on start.</div>
+      </div>
+      <select id="set-miner-system">${systemOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Send Ore To</div>
+        <div class="setting-hint">Transfer mined ore to another bot's station storage via trade.</div>
+      </div>
+      <select id="set-miner-depositBot">${botOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Sell Ore at Station</div>
+        <div class="setting-hint">Sell ore for credits instead of depositing to storage.</div>
+      </div>
+      <select id="set-miner-sellOre">
+        <option value="false"${!sellOre ? ' selected' : ''}>No (deposit to storage)</option>
+        <option value="true"${sellOre ? ' selected' : ''}>Yes (sell for credits)</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cargo Fill Threshold</div>
+        <div class="setting-hint">Return to station when cargo reaches this % full.</div>
+      </div>
+      <input type="number" id="set-miner-cargoThreshold" min="50" max="100" value="${cargoThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel at station when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-miner-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull at station when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-miner-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveMinerSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveMinerSettings() {
+  const s = {
+    targetOre: document.getElementById('set-miner-targetOre').value,
+    system: document.getElementById('set-miner-system').value,
+    depositBot: document.getElementById('set-miner-depositBot').value,
+    sellOre: document.getElementById('set-miner-sellOre').value === 'true',
+    cargoThreshold: parseInt(document.getElementById('set-miner-cargoThreshold').value) || 80,
+    refuelThreshold: parseInt(document.getElementById('set-miner-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-miner-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'miner', settings: s });
+}
+
+// ── Crafter Settings ────────────────────────────────────────
+let cachedSettingsRecipes = null; // global recipes cache for settings panel
+
+function renderCrafterSettings(panel) {
+  const crafter = settings.crafter || {};
+  const craftLimits = crafter.craftLimits || {};
+  const refuelThreshold = crafter.refuelThreshold ?? 50;
+  const repairThreshold = crafter.repairThreshold ?? 40;
+
+  // If we don't have recipes yet, fetch from first available bot
+  if (!cachedSettingsRecipes && bots.length > 0) {
+    panel.innerHTML = '<h3>Crafter Settings</h3><div class="settings-desc">Loading recipes...</div>';
+    sendExec(bots[0].username, 'get_recipes', undefined, (result) => {
+      if (result.ok && result.data) {
+        cachedSettingsRecipes = extractRecipes(result.data);
+      } else {
+        cachedSettingsRecipes = [];
+      }
+      if (activeSettingsTab === 'crafter') renderCrafterSettings(panel);
+    });
+    return;
+  }
+
+  const recipes = cachedSettingsRecipes || [];
+
+  // Build rows only for configured items
+  const configuredIds = Object.keys(craftLimits).filter(id => craftLimits[id] > 0);
+  const configuredRows = configuredIds.map(id => {
+    const r = recipes.find(r => (r.recipe_id || r.id || r.name) === id);
+    const name = r ? (r.name || r.recipe_id || id) : id;
+    const category = r?.category || '';
+    const comps = r ? (r.components || r.ingredients || r.inputs || r.materials || []) : [];
+    const compStr = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
+    const catBadge = category ? `<span class="craft-cat">${esc(category)}</span>` : '';
+    return `
+      <div class="craft-limit-row">
+        <div class="craft-limit-info">
+          <div class="craft-limit-name">${esc(name)} ${catBadge}</div>
+          <div class="craft-limit-detail">${esc(compStr || id)}</div>
+        </div>
+        <input type="number" min="1" value="${craftLimits[id]}" data-recipe="${esc(id)}" class="craft-limit-val craft-limit-input" style="width:70px">
+        <button class="sm" style="background:#d32f2f;border:none;color:#fff;padding:2px 8px;cursor:pointer;border-radius:4px" onclick="removeCraftItem('${esc(id)}')">✕</button>
+      </div>`;
+  }).join('');
+
+  // Build category → item picker
+  const usedIds = new Set(configuredIds);
+  const availableRecipes = recipes.filter(r => !usedIds.has(r.recipe_id || r.id || r.name));
+  const categories = new Map();
+  for (const r of availableRecipes) {
+    const cat = r.category || 'Other';
+    if (!categories.has(cat)) categories.set(cat, []);
+    categories.get(cat).push(r);
+  }
+  const catOpts = categories.size > 0
+    ? [...categories.keys()].sort().map(c => `<option value="${esc(c)}">${esc(c)} (${categories.get(c).length})</option>`).join('')
+    : '<option value="">All recipes added</option>';
+
+  panel.innerHTML = `
+    <h3>Crafter Settings</h3>
+    <div class="settings-desc">Add recipes and set stock limits. The crafter bot will craft each item up to its limit, then stop.</div>
+
+    <div class="craft-limits-list" id="craftLimitsList">
+      ${configuredRows || '<div style="color:var(--dim);padding:8px">No recipes configured. Add one below.</div>'}
+    </div>
+
+    <div style="margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg)">
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="craft-add-cat" onchange="updateCraftItemSelect()" style="min-width:100px">${catOpts}</select>
+        <select id="craft-add-select" onchange="updateCraftAddDetail()" style="flex:1;min-width:0"></select>
+        <input type="number" id="craft-add-qty" min="1" value="10" style="width:70px">
+        <button class="primary sm" onclick="addCraftItem()">+ Add</button>
+      </div>
+      <div id="craft-add-detail" style="font-size:0.75em;color:var(--dim);margin-top:4px"></div>
+    </div>
+
+    <div class="setting-row" style="margin-top:16px">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-crafter-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-crafter-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="sm" onclick="cachedSettingsRecipes=null;renderCrafterSettings(document.getElementById('settingsContent'))">Refresh Recipes</button>
+      <button class="primary" onclick="saveCrafterSettings()">Save Settings</button>
+    </div>
+  `;
+
+  // Populate item dropdown for initially selected category
+  updateCraftItemSelect();
+}
+
+function updateCraftItemSelect() {
+  const catSel = document.getElementById('craft-add-cat');
+  const itemSel = document.getElementById('craft-add-select');
+  const detail = document.getElementById('craft-add-detail');
+  if (!catSel || !itemSel) return;
+
+  const cat = catSel.value;
+  const recipes = cachedSettingsRecipes || [];
+  const crafter = settings.crafter || {};
+  const craftLimits = crafter.craftLimits || {};
+  const usedIds = new Set(Object.keys(craftLimits).filter(id => craftLimits[id] > 0));
+
+  const filtered = recipes.filter(r => {
+    const id = r.recipe_id || r.id || r.name || '';
+    const rCat = r.category || 'Other';
+    return rCat === cat && !usedIds.has(id);
+  });
+
+  itemSel.innerHTML = filtered.length > 0
+    ? filtered.map(r => {
+        const id = r.recipe_id || r.id || r.name || '';
+        const name = r.name || r.recipe_id || '?';
+        return `<option value="${esc(id)}">${esc(name)}</option>`;
+      }).join('')
+    : '<option value="">No items in this category</option>';
+
+  // Show detail for selected item
+  updateCraftAddDetail();
+}
+
+function updateCraftAddDetail() {
+  const itemSel = document.getElementById('craft-add-select');
+  const detail = document.getElementById('craft-add-detail');
+  if (!itemSel || !detail) return;
+
+  const id = itemSel.value;
+  const recipes = cachedSettingsRecipes || [];
+  const r = recipes.find(r => (r.recipe_id || r.id || r.name) === id);
+  if (!r) { detail.textContent = ''; return; }
+
+  const comps = r.components || r.ingredients || r.inputs || r.materials || [];
+  const compStr = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
+  const output = r.output || r.result || r.produces || {};
+  const outName = output.name || output.item_id || r.name || '?';
+  const outQty = output.quantity || 1;
+  detail.textContent = `${compStr} → ${outQty}x ${outName}`;
+}
+
+function addCraftItem() {
+  const sel = document.getElementById('craft-add-select');
+  const qtyEl = document.getElementById('craft-add-qty');
+  const id = sel?.value;
+  const qty = parseInt(qtyEl?.value) || 10;
+  if (!id) return;
+
+  if (!settings.crafter) settings.crafter = {};
+  if (!settings.crafter.craftLimits) settings.crafter.craftLimits = {};
+  settings.crafter.craftLimits[id] = qty;
+  renderCrafterSettings(document.getElementById('settingsContent'));
+}
+
+function removeCraftItem(id) {
+  if (!settings.crafter?.craftLimits) return;
+  delete settings.crafter.craftLimits[id];
+  renderCrafterSettings(document.getElementById('settingsContent'));
+}
+
+function saveCrafterSettings() {
+  // Collect from rendered inputs (in case user edited qty inline)
+  const craftLimits = {};
+  document.querySelectorAll('.craft-limit-val').forEach(el => {
+    const id = el.getAttribute('data-recipe');
+    const val = parseInt(el.value) || 0;
+    if (id && val > 0) craftLimits[id] = val;
+  });
+
+  // Also merge any items from settings that aren't rendered (shouldn't happen, but safe)
+  if (settings.crafter?.craftLimits) {
+    for (const [id, val] of Object.entries(settings.crafter.craftLimits)) {
+      if (val > 0 && !(id in craftLimits)) craftLimits[id] = val;
+    }
+  }
+
+  const s = {
+    craftLimits,
+    refuelThreshold: parseInt(document.getElementById('set-crafter-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-crafter-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'crafter', settings: s });
+
+  // Update local settings
+  settings.crafter = s;
+}
+
+// ── Rescue settings ────────────────────────────────────────
+function renderRescueSettings(panel) {
+  const r = settings.rescue || {};
+  const fuelThreshold = r.fuelThreshold ?? 10;
+  const rescueFuelCells = r.rescueFuelCells ?? 10;
+  const rescueCredits = r.rescueCredits ?? 500;
+  const scanIntervalSec = r.scanIntervalSec ?? 30;
+  const refuelThreshold = r.refuelThreshold ?? 60;
+
+  panel.innerHTML = `
+    <h3 style="margin:0 0 12px;color:var(--text)">FuelRescue Settings</h3>
+    <p style="color:var(--dim);font-size:0.85em;margin:0 0 16px">
+      Monitors fleet for stranded bots and delivers fuel cells or credits.
+      Assign this routine to a dedicated rescue bot.
+    </p>
+
+    <div class="settings-group">
+      <label>Fleet scan interval (seconds)</label>
+      <input type="number" id="set-rescue-scanInterval" value="${scanIntervalSec}" min="10" max="300" style="width:80px">
+      <small style="color:var(--dim)">How often to check fleet for stranded bots</small>
+    </div>
+
+    <div class="settings-group">
+      <label>Rescue trigger (fuel %)</label>
+      <input type="number" id="set-rescue-fuelThreshold" value="${fuelThreshold}" min="0" max="50" style="width:80px">
+      <small style="color:var(--dim)">Bots below this fuel % trigger a rescue mission</small>
+    </div>
+
+    <div class="settings-group">
+      <label>Fuel cells to deliver</label>
+      <input type="number" id="set-rescue-fuelCells" value="${rescueFuelCells}" min="1" max="50" style="width:80px">
+      <small style="color:var(--dim)">Number of fuel cells to buy/deliver per rescue</small>
+    </div>
+
+    <div class="settings-group">
+      <label>Credits to send</label>
+      <input type="number" id="set-rescue-credits" value="${rescueCredits}" min="0" max="10000" style="width:80px">
+      <small style="color:var(--dim)">Credits to gift when fuel cells unavailable (0 = disabled)</small>
+    </div>
+
+    <div class="settings-group">
+      <label>Self refuel threshold (%)</label>
+      <input type="number" id="set-rescue-refuelThreshold" value="${refuelThreshold}" min="30" max="90" style="width:80px">
+      <small style="color:var(--dim)">Keep rescue bot's own fuel above this level</small>
+    </div>
+
+    <button class="btn" onclick="saveRescueSettings()">Save</button>
+  `;
+}
+
+function saveRescueSettings() {
+  const s = {
+    fuelThreshold: parseInt(document.getElementById('set-rescue-fuelThreshold').value) || 10,
+    rescueFuelCells: parseInt(document.getElementById('set-rescue-fuelCells').value) || 10,
+    rescueCredits: parseInt(document.getElementById('set-rescue-credits').value) || 500,
+    scanIntervalSec: parseInt(document.getElementById('set-rescue-scanInterval').value) || 30,
+    refuelThreshold: parseInt(document.getElementById('set-rescue-refuelThreshold').value) || 60,
+  };
+  send({ type: 'saveSettings', routine: 'rescue', settings: s });
+}
+
+// ── Chat bot select ────────────────────────────────────────
+function updateChatBotSelect() {
+  const select = document.getElementById('chatBot');
+  const prev = select.value;
+  select.innerHTML = bots.map(b =>
+    `<option value="${esc(b.username)}">${esc(b.username)}</option>`
+  ).join('');
+  if (prev && bots.find(b => b.username === prev)) {
+    select.value = prev;
+  }
+}
+
+// ── Log helpers ────────────────────────────────────────────
+function appendLines(el, panel, lines) {
+  const fragment = document.createDocumentFragment();
+  for (const line of lines) fragment.appendChild(makeLogLine(line));
+  el.appendChild(fragment);
+  if (autoScroll[panel]) el.scrollTop = el.scrollHeight;
+}
+
+function appendLine(panel, line) {
+  const elMap = { activity: activityEl, broadcast: broadcastEl, system: systemEl };
+  const el = elMap[panel];
+  if (!el) return;
+  el.appendChild(makeLogLine(line));
+  if (autoScroll[panel]) el.scrollTop = el.scrollHeight;
+}
+
+function makeLogLine(text) {
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  const m = text.match(/\[(\w+)\]/);
+  if (m) div.classList.add(`cat-${m[1].toLowerCase()}`);
+  div.textContent = text;
+  return div;
+}
+
+// ── Actions ────────────────────────────────────────────────
+function startBot(username) {
+  const sel = document.getElementById(`routine-${username}`);
+  const routine = sel ? sel.value : 'miner';
+  send({ type: 'start', bot: username, routine });
+}
+
+function stopBot(username) {
+  send({ type: 'stop', bot: username });
+}
+
+function sendChat() {
+  const bot = document.getElementById('chatBot').value;
+  const channel = document.getElementById('chatChannel').value;
+  const input = document.getElementById('chatInput');
+  const message = input.value.trim();
+  if (!message || !bot) return;
+  send({ type: 'chat', bot, message, channel });
+  input.value = '';
+}
+
+function send(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+// ── Add / Register Modal ───────────────────────────────────
+function showAddModal() {
+  modalMode = 'add';
+  updateModalView();
+  document.getElementById('addModal').classList.add('active');
+  document.getElementById('addUsername').focus();
+}
+
+function closeAddModal() {
+  document.getElementById('addModal').classList.remove('active');
+  document.getElementById('addUsername').value = '';
+  document.getElementById('addPassword').value = '';
+  document.getElementById('regCode').value = '';
+  document.getElementById('regUsername').value = '';
+}
+
+function toggleModalMode() {
+  modalMode = modalMode === 'add' ? 'register' : 'add';
+  updateModalView();
+}
+
+function updateModalView() {
+  const isAdd = modalMode === 'add';
+  document.getElementById('modalTitle').textContent = isAdd ? 'Add Existing Bot' : 'Register New Bot';
+  document.getElementById('modalAddFields').style.display = isAdd ? '' : 'none';
+  document.getElementById('modalRegFields').style.display = isAdd ? 'none' : '';
+  document.getElementById('modalToggle').textContent = isAdd ? 'Register New' : 'Add Existing';
+  document.getElementById('modalSubmit').textContent = isAdd ? 'Add' : 'Register';
+}
+
+function submitAddModal() {
+  if (modalMode === 'add') {
+    const username = document.getElementById('addUsername').value.trim();
+    const password = document.getElementById('addPassword').value.trim();
+    if (!username || !password) return;
+    send({ type: 'add', username, password });
+  } else {
+    const code = document.getElementById('regCode').value.trim();
+    const username = document.getElementById('regUsername').value.trim();
+    const empire = document.getElementById('regEmpire').value;
+    if (!code || !username) return;
+    send({ type: 'register', username, empire, registration_code: code });
+  }
+  closeAddModal();
+}
+
+// ── Utilities ──────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function num(n) {
+  return (n || 0).toLocaleString();
+}
+
+// ── Missions ───────────────────────────────────────────────
+let missionsSelectedBot = null;
+let activeMissionsCache = {};
+let factionSelectedBot = null;
+let factionData = null; // cached faction_info result
+let factionActivePanel = 'overview'; // overview | members | storage | diplomacy | intel
+
+function renderMissionsPage() {
+  renderMissionsSidebar();
+  if (missionsSelectedBot) {
+    fetchActiveMissions(missionsSelectedBot);
+  } else {
+    renderMissionsFromMap();
+  }
+}
+
+function renderMissionsSidebar() {
+  const body = document.getElementById('missionsSidebarBody');
+  if (!body) return;
+  let html = `<button class="mission-bot-btn${!missionsSelectedBot ? ' active' : ''}" onclick="selectMissionView(null)">All Available</button>`;
+  for (const bot of bots) {
+    const active = missionsSelectedBot === bot.username ? ' active' : '';
+    html += `<button class="mission-bot-btn${active}" onclick="selectMissionView('${esc(bot.username)}')">${esc(bot.username)}</button>`;
+  }
+  body.innerHTML = html;
+}
+
+function selectMissionView(botName) {
+  missionsSelectedBot = botName;
+  renderMissionsSidebar();
+  if (botName) {
+    fetchActiveMissions(botName);
+  } else {
+    renderMissionsFromMap();
+  }
+}
+
+function fetchActiveMissions(username) {
+  const content = document.getElementById('missionsContent');
+  if (!content) return;
+  content.innerHTML = '<div class="map-empty">Loading missions...</div>';
+
+  sendExec(username, 'get_active_missions', undefined, (result) => {
+    if (missionsSelectedBot !== username) return;
+    let activeMissions = [];
+    if (result.ok && result.data) {
+      const d = result.data;
+      activeMissions = Array.isArray(d) ? d :
+        (d.missions || d.active_missions || d.active || []);
+    }
+    activeMissionsCache[username] = activeMissions;
+    renderBotMissions(username, activeMissions);
+  });
+}
+
+function renderBotMissions(username, activeMissions) {
+  const content = document.getElementById('missionsContent');
+  if (!content) return;
+
+  let html = '';
+
+  // Active missions section
+  html += `<div class="missions-section">`;
+  html += `<div class="missions-section-title">Active Missions <span class="count-badge">${activeMissions.length}</span></div>`;
+  if (activeMissions.length === 0) {
+    html += `<div style="color:var(--text-dim);font-size:12px;font-style:italic">No active missions for ${esc(username)}</div>`;
+  } else {
+    for (const m of activeMissions) {
+      const title = m.title || m.name || m.mission_id || 'Unknown';
+      const type = m.type || m.mission_type || '';
+      const desc = m.description || '';
+      const reward = m.reward_credits ? `${Number(m.reward_credits).toLocaleString()} cr` : (m.reward || '-');
+      const status = m.status || 'active';
+      const mId = m.mission_id || m.id || '';
+
+      html += `<div class="mission-card">`;
+      html += `<div class="mission-card-head">`;
+      html += `<span class="mission-title">${esc(title)}</span>`;
+      if (type) html += `<span class="mission-type-badge">${esc(type)}</span>`;
+      html += `<span class="active-mission-status ams-${status === 'active' ? 'active' : 'complete'}">${esc(status)}</span>`;
+      html += `</div>`;
+      if (desc) html += `<div class="mission-desc">${esc(desc)}</div>`;
+      html += `<div class="mission-meta">`;
+      html += `<span class="mission-reward">${reward}</span>`;
+      html += `<button class="mission-action-btn complete-btn" onclick="missionAction('${esc(username)}','complete_mission','${esc(mId)}')">Complete</button>`;
+      html += `<button class="mission-action-btn abandon-btn" onclick="missionAction('${esc(username)}','abandon_mission','${esc(mId)}')">Abandon</button>`;
+      html += `</div>`;
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+
+  // Available missions from map data
+  html += `<div class="missions-section">`;
+  html += `<div class="missions-section-title">Available to Claim</div>`;
+  html += renderAvailableMissions(username);
+  html += `</div>`;
+
+  content.innerHTML = html;
+}
+
+function renderAvailableMissions(claimBot) {
+  let html = '';
+  let count = 0;
+
+  for (const [sysId, sys] of Object.entries(mapData)) {
+    const sysName = sys.name || sysId;
+    for (const poi of (sys.pois || [])) {
+      if (!poi.missions || poi.missions.length === 0) continue;
+      for (const m of poi.missions) {
+        count++;
+        const title = m.title || m.mission_id || 'Unknown';
+        const type = m.type || '';
+        const reward = m.reward_credits ? `${Number(m.reward_credits).toLocaleString()} cr` : '-';
+        const mId = m.mission_id || m.id || '';
+
+        html += `<div class="mission-card">`;
+        html += `<div class="mission-card-head">`;
+        html += `<span class="mission-title">${esc(title)}</span>`;
+        if (type) html += `<span class="mission-type-badge">${esc(type)}</span>`;
+        html += `</div>`;
+        if (m.description) html += `<div class="mission-desc">${esc(m.description)}</div>`;
+        html += `<div class="mission-meta">`;
+        html += `<span class="mission-reward">${reward}</span>`;
+        html += `<span class="mission-location">${esc(sysName)} - ${esc(poi.name || poi.id)}</span>`;
+        html += `<span class="mission-age">${timeAgo(m.last_seen)}</span>`;
+        if (claimBot) {
+          html += `<button class="mission-claim-btn" onclick="claimMission('${esc(claimBot)}','${esc(mId)}')">Claim</button>`;
+        }
+        html += `</div>`;
+        html += `</div>`;
+      }
+    }
+  }
+
+  if (count === 0) {
+    html = '<div style="color:var(--text-dim);font-size:12px;font-style:italic">No missions discovered yet. Run Explorer to find missions at stations.</div>';
+  }
+  return html;
+}
+
+function renderMissionsFromMap() {
+  const content = document.getElementById('missionsContent');
+  if (!content) return;
+
+  let html = '<div class="missions-section">';
+  html += '<div class="missions-section-title">All Discovered Missions</div>';
+  html += renderAvailableMissions(null);
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+function claimMission(botName, missionId) {
+  if (!botName || !missionId) return;
+  sendExec(botName, 'accept_mission', { mission_id: missionId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${botName} claimed mission: ${missionId}`);
+      if (missionsSelectedBot === botName) fetchActiveMissions(botName);
+    } else {
+      appendLine('system', `Failed to claim mission: ${result.error || 'unknown error'}`);
+    }
+  });
+}
+
+function missionAction(botName, action, missionId) {
+  if (!botName || !missionId) return;
+  sendExec(botName, action, { mission_id: missionId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${botName}: ${action.replace('_', ' ')} successful`);
+      if (missionsSelectedBot === botName) fetchActiveMissions(botName);
+    } else {
+      appendLine('system', `${action.replace('_', ' ')} failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+// ── Faction ─────────────────────────────────────────────────
+
+function renderFactionPage() {
+  renderFactionSidebar();
+  if (factionSelectedBot) {
+    fetchFactionInfo(factionSelectedBot);
+  } else {
+    document.getElementById('factionContent').innerHTML =
+      '<div class="faction-no-data">Select a bot to view or manage its faction.</div>';
+  }
+}
+
+function renderFactionSidebar() {
+  const body = document.getElementById('factionSidebarBody');
+  if (!body) return;
+  let html = '';
+  for (const bot of bots) {
+    const active = factionSelectedBot === bot.username ? ' active' : '';
+    html += `<button class="faction-nav-btn${active}" onclick="selectFactionBot('${esc(bot.username)}')">${esc(bot.username)}</button>`;
+  }
+  if (bots.length === 0) {
+    html = '<div class="faction-no-data">No bots available</div>';
+  }
+  body.innerHTML = html;
+}
+
+function selectFactionBot(username) {
+  factionSelectedBot = username;
+  factionData = null;
+  factionActivePanel = 'overview';
+  renderFactionSidebar();
+  fetchFactionInfo(username);
+}
+
+function fetchFactionInfo(username) {
+  const content = document.getElementById('factionContent');
+  content.innerHTML = '<div class="faction-no-data">Loading faction data...</div>';
+
+  sendExec(username, 'faction_info', undefined, (result) => {
+    if (factionSelectedBot !== username) return;
+
+    if (!result.ok || !result.data) {
+      // Not in a faction — show join/create options
+      factionData = null;
+      renderNoFaction(username, result.error);
+      return;
+    }
+    factionData = result.data;
+    renderFactionContent(username);
+  });
+}
+
+function renderNoFaction(username, error) {
+  const content = document.getElementById('factionContent');
+  const errorHint = error && !error.includes('not in a faction') && !error.includes('no faction')
+    ? `<div style="color:var(--red);font-size:11px;margin-bottom:12px">${esc(error)}</div>` : '';
+
+  content.innerHTML = `
+    ${errorHint}
+    <div class="faction-section">
+      <div class="faction-section-title">Not in a Faction</div>
+      <p style="color:var(--text-dim);font-size:12px;margin-bottom:16px">
+        ${esc(username)} is not currently in a faction. You can join an existing faction or create a new one.
+      </p>
+
+      <div class="faction-card">
+        <div class="fc-name">Pending Invites</div>
+        <div class="fc-detail">Check if you've been invited to a faction.</div>
+        <div id="factionPendingInvites" style="margin-top:8px">
+          <button class="sm" onclick="fetchPendingInvites('${esc(username)}')">Check Invites</button>
+        </div>
+      </div>
+
+      <div class="faction-card" style="margin-top:8px">
+        <div class="fc-name">Create a Faction</div>
+        <div class="fc-detail">Start your own faction. Requires credits.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <input type="text" id="faction-create-name" placeholder="Faction name" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;flex:1;min-width:120px">
+          <input type="text" id="faction-create-tag" placeholder="Tag (3-5 chars)" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;width:120px">
+          <button class="primary sm" onclick="factionCreate('${esc(username)}')">Create</button>
+        </div>
+      </div>
+
+      <div class="faction-card" style="margin-top:8px">
+        <div class="fc-name">Browse Factions</div>
+        <div class="fc-detail">View all factions in the galaxy.</div>
+        <button class="sm" style="margin-top:6px" onclick="fetchFactionList('${esc(username)}')">List Factions</button>
+        <div id="factionListContainer"></div>
+      </div>
+    </div>
+  `;
+}
+
+function fetchPendingInvites(username) {
+  const container = document.getElementById('factionPendingInvites');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'faction_get_invites', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'No pending invites')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const invites = Array.isArray(d) ? d : (Array.isArray(d.invites) ? d.invites : []);
+    if (invites.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No pending invites. Ask a faction leader to invite you.</div>';
+      return;
+    }
+    container.innerHTML = invites.map(inv => {
+      const fname = inv.faction_name || inv.name || inv.faction_id || '?';
+      const fid = inv.faction_id || inv.id || '';
+      const tag = inv.tag ? ` [${inv.tag}]` : '';
+      return `<div class="faction-card" style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span class="fc-name">${esc(fname)}${esc(tag)}</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="primary sm" onclick="factionAcceptInvite('${esc(username)}','${esc(fid)}')">Accept</button>
+          <button class="sm" onclick="factionDeclineInvite('${esc(username)}','${esc(fid)}')">Decline</button>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function factionAcceptInvite(username, factionId) {
+  if (!factionId) return;
+  sendExec(username, 'join_faction', { faction_id: factionId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} joined faction!`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Join faction failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionDeclineInvite(username, factionId) {
+  if (!factionId) return;
+  sendExec(username, 'faction_decline_invite', { faction_id: factionId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} declined invite`);
+      fetchPendingInvites(username);
+    } else {
+      appendLine('system', `Decline failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionCreate(username) {
+  const name = document.getElementById('faction-create-name')?.value?.trim();
+  const tag = document.getElementById('faction-create-tag')?.value?.trim();
+  if (!name) return;
+  const params = { name };
+  if (tag) params.tag = tag;
+  sendExec(username, 'create_faction', params, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} created faction: ${name}`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Create faction failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function fetchFactionList(username) {
+  const container = document.getElementById('factionListContainer');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'faction_list', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'Could not load factions')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const factions = Array.isArray(d) ? d : (Array.isArray(d.factions) ? d.factions : []);
+    if (factions.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No factions found</div>';
+      return;
+    }
+    container.innerHTML = factions.map(f => {
+      const name = f.name || f.faction_id || '?';
+      const tag = f.tag ? ` [${f.tag}]` : '';
+      const members = f.member_count || f.members || '?';
+      return `<div class="faction-card">
+        <div class="fc-name">${esc(name)}${esc(tag)}</div>
+        <div class="fc-detail">${members} members</div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function renderFactionContent(username) {
+  const content = document.getElementById('factionContent');
+  if (!factionData) {
+    content.innerHTML = '<div class="faction-no-data">No faction data</div>';
+    return;
+  }
+
+  const f = factionData;
+  const fname = f.name || f.faction_name || '?';
+  const tag = f.tag || f.faction_tag || '';
+  const members = Array.isArray(f.members) ? f.members : [];
+  const treasury = f.treasury ?? f.credits ?? '?';
+  const leader = f.leader || f.owner || '';
+
+  // Panel navigation tabs
+  const panels = ['overview', 'members', 'storage', 'facilities', 'diplomacy', 'intel'];
+  const panelNav = panels.map(p => {
+    const active = factionActivePanel === p ? ' active' : '';
+    const label = p.charAt(0).toUpperCase() + p.slice(1);
+    return `<button class="faction-nav-btn${active}" style="display:inline-block;width:auto;padding:5px 12px;font-size:11px" onclick="switchFactionPanel('${p}')">${label}</button>`;
+  }).join('');
+
+  let panelHtml = '';
+  switch (factionActivePanel) {
+    case 'overview':
+      panelHtml = renderFactionOverview(f, username);
+      break;
+    case 'members':
+      panelHtml = renderFactionMembers(f, username);
+      break;
+    case 'storage':
+      panelHtml = renderFactionStorage(f, username);
+      break;
+    case 'facilities':
+      panelHtml = renderFactionFacilities(f, username);
+      break;
+    case 'diplomacy':
+      panelHtml = renderFactionDiplomacy(f, username);
+      break;
+    case 'intel':
+      panelHtml = renderFactionIntel(f, username);
+      break;
+  }
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:700;color:var(--text-bright)">${esc(fname)}</div>
+      ${tag ? `<span style="font-size:11px;padding:2px 8px;background:#1a3a2a;color:#4ade80;border-radius:4px">[${esc(tag)}]</span>` : ''}
+      <button class="sm" style="margin-left:auto;background:var(--red);border:none;color:#fff;font-size:11px" onclick="factionLeave('${esc(username)}')">Leave Faction</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">${panelNav}</div>
+    ${panelHtml}
+  `;
+}
+
+function switchFactionPanel(panel) {
+  factionActivePanel = panel;
+  if (factionSelectedBot) renderFactionContent(factionSelectedBot);
+}
+
+function renderFactionOverview(f, username) {
+  const members = Array.isArray(f.members) ? f.members : [];
+  const treasury = f.treasury ?? f.credits ?? '?';
+  const leader = f.leader || f.owner || '';
+  const desc = f.description || f.desc || '';
+  const allies = Array.isArray(f.allies) ? f.allies : [];
+  const enemies = Array.isArray(f.enemies) ? f.enemies : [];
+  const wars = Array.isArray(f.wars) ? f.wars : [];
+
+  return `
+    <div class="faction-section">
+      <div class="faction-stat-grid">
+        <span class="fsl">Leader</span><span class="fsv">${esc(String(leader))}</span>
+        <span class="fsl">Members</span><span class="fsv">${members.length}</span>
+        <span class="fsl">Treasury</span><span class="fsv">${typeof treasury === 'number' ? Number(treasury).toLocaleString() + 'cr' : esc(String(treasury))}</span>
+        ${desc ? `<span class="fsl">Description</span><span class="fsv">${esc(desc)}</span>` : ''}
+        <span class="fsl">Allies</span><span class="fsv">${allies.length > 0 ? allies.map(a => esc(a.name || a.faction_name || a)).join(', ') : 'None'}</span>
+        <span class="fsl">Enemies</span><span class="fsv" style="color:var(--red)">${enemies.length > 0 ? enemies.map(e => esc(e.name || e.faction_name || e)).join(', ') : 'None'}</span>
+        <span class="fsl">Wars</span><span class="fsv" style="color:var(--orange)">${wars.length > 0 ? wars.map(w => esc(w.name || w.faction_name || w)).join(', ') : 'None'}</span>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Quick Actions</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="sm" onclick="factionExec('${esc(username)}','faction_info')">Refresh</button>
+        <button class="sm" onclick="factionDepositCredits('${esc(username)}')">Deposit Credits</button>
+        <button class="sm" onclick="factionWithdrawCredits('${esc(username)}')">Withdraw Credits</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input type="number" id="faction-credits-amt" value="100" min="1" style="width:100px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+        <span style="color:var(--text-dim);font-size:11px">credits for deposit/withdraw</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderFactionMembers(f, username) {
+  const members = Array.isArray(f.members) ? f.members : [];
+  if (members.length === 0) return '<div class="faction-no-data">No member data available</div>';
+
+  const rows = members.map(m => {
+    const name = m.username || m.name || m.player_id || '?';
+    const pid = m.player_id || m.id || name;
+    const role = m.role || m.rank || 'member';
+    const online = m.online ? '<span style="color:var(--green)">online</span>' : '';
+    const roles = ['recruit', 'member', 'officer', 'leader'];
+    const roleOpts = roles.map(r => `<option value="${r}"${r === role.toLowerCase() ? ' selected' : ''}>${r}</option>`).join('');
+    return `<div class="faction-member-row">
+      <div>
+        <span class="fm-name">${esc(name)}</span>
+        <span class="fm-role" style="margin-left:8px">${esc(role)}</span>
+        ${online ? `<span style="margin-left:6px;font-size:10px">${online}</span>` : ''}
+      </div>
+      <div class="fm-actions">
+        <select style="font-size:10px;padding:1px 4px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:3px" onchange="factionPromote('${esc(username)}','${esc(pid)}',this.value)">${roleOpts}</select>
+        <button class="sm" style="font-size:10px;padding:2px 6px;background:var(--red);border:none;color:#fff" onclick="factionKick('${esc(username)}','${esc(pid)}')">Kick</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Members <span class="count-badge">${members.length}</span></div>
+      <div class="faction-card" style="padding:0">${rows}</div>
+    </div>
+    <div class="faction-section" style="margin-top:12px">
+      <div class="faction-section-title">Invite Player</div>
+      <div class="faction-invite-row">
+        <input type="text" id="faction-invite-name" placeholder="Player username or ID">
+        <button class="primary sm" onclick="factionInvite('${esc(username)}')">Invite</button>
+      </div>
+      ${renderQuickInviteButtons(username, members)}
+    </div>
+  `;
+}
+
+function renderFactionStorage(f, username) {
+  const bot = bots.find(b => b.username === username);
+  const docked = bot ? bot.docked : false;
+  const dockWarning = !docked
+    ? '<div style="color:var(--yellow);font-size:11px;margin-bottom:12px">Bot must be docked at a station to access faction storage.</div>'
+    : '';
+
+  return `
+    ${dockWarning}
+    <div class="faction-section">
+      <div class="faction-section-title">Faction Storage</div>
+      <div id="factionStorageItems">
+        <button class="sm" onclick="fetchFactionStorage('${esc(username)}')" ${!docked ? 'disabled' : ''}>Load Storage</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Deposit Items</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="faction-dep-item" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+          ${getFactionDepositOptions(username)}
+        </select>
+        <input type="number" id="faction-dep-qty" value="1" min="1" style="width:70px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+        <button class="primary sm" onclick="factionDepositItems('${esc(username)}')" ${!docked ? 'disabled' : ''}>Deposit</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:12px">
+      <div class="faction-section-title">Withdraw Items</div>
+      <div id="factionWithdrawPanel">
+        <button class="sm" onclick="fetchFactionStorageForWithdraw('${esc(username)}')" ${!docked ? 'disabled' : ''}>Load Available Items</button>
+      </div>
+    </div>
+  `;
+}
+
+function getFactionDepositOptions(username) {
+  const bot = bots.find(b => b.username === username);
+  if (!bot || !bot.inventory || bot.inventory.length === 0) {
+    return '<option value="">No items in cargo</option>';
+  }
+  return bot.inventory.map(i =>
+    `<option value="${esc(i.itemId)}">${esc(i.name)} (${i.quantity})</option>`
+  ).join('');
+}
+
+function renderFactionDiplomacy(f, username) {
+  const allies = Array.isArray(f.allies) ? f.allies : [];
+  const enemies = Array.isArray(f.enemies) ? f.enemies : [];
+  const wars = Array.isArray(f.wars) ? f.wars : [];
+
+  const allyRows = allies.length > 0
+    ? allies.map(a => {
+        const name = a.name || a.faction_name || a;
+        return `<div class="faction-card"><span class="fc-name" style="color:var(--green)">${esc(String(name))}</span></div>`;
+      }).join('')
+    : '<div class="faction-no-data">No allies</div>';
+
+  const enemyRows = enemies.length > 0
+    ? enemies.map(e => {
+        const name = e.name || e.faction_name || e;
+        return `<div class="faction-card"><span class="fc-name" style="color:var(--red)">${esc(String(name))}</span></div>`;
+      }).join('')
+    : '<div class="faction-no-data">No enemies</div>';
+
+  const warRows = wars.length > 0
+    ? wars.map(w => {
+        const name = w.name || w.faction_name || w;
+        return `<div class="faction-card">
+          <span class="fc-name" style="color:var(--orange)">${esc(String(name))}</span>
+          <div class="fc-actions">
+            <button class="sm" style="font-size:10px" onclick="factionProposePeace('${esc(username)}','${esc(String(name))}')">Propose Peace</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="faction-no-data">No active wars</div>';
+
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Allies</div>
+      ${allyRows}
+    </div>
+    <div class="faction-section">
+      <div class="faction-section-title">Enemies</div>
+      ${enemyRows}
+    </div>
+    <div class="faction-section">
+      <div class="faction-section-title">Wars</div>
+      ${warRows}
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Diplomacy Actions</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <input type="text" id="faction-diplo-target" placeholder="Faction name" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;flex:1;min-width:120px">
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="sm" onclick="factionDiploAction('${esc(username)}','faction_set_ally')">Set Ally</button>
+        <button class="sm" onclick="factionDiploAction('${esc(username)}','faction_set_enemy')">Set Enemy</button>
+        <button class="sm" style="background:var(--red);border:none;color:#fff" onclick="factionDiploAction('${esc(username)}','faction_declare_war')">Declare War</button>
+        <button class="sm" onclick="factionDiploAction('${esc(username)}','faction_propose_peace')">Propose Peace</button>
+        <button class="sm" style="background:var(--green);border:none;color:#000" onclick="factionDiploAction('${esc(username)}','faction_accept_peace')">Accept Peace</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderFactionIntel(f, username) {
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Intel Status</div>
+      <div id="factionIntelStatus"><button class="sm" onclick="fetchFactionIntelStatus('${esc(username)}')">Load Intel Status</button></div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Query Intel</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="faction-intel-query" placeholder="System or player name" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;flex:1;min-width:120px">
+        <button class="primary sm" onclick="factionQueryIntel('${esc(username)}')">Query</button>
+      </div>
+      <div id="factionIntelResults" style="margin-top:8px"></div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Trade Intel</div>
+      <div id="factionTradeIntel"><button class="sm" onclick="fetchFactionTradeIntel('${esc(username)}')">Load Trade Intel</button></div>
+    </div>
+  `;
+}
+
+// ── Faction actions ──────────────────────────────────────────
+
+function factionLeave(username) {
+  if (!confirm('Are you sure you want to leave the faction?')) return;
+  sendExec(username, 'leave_faction', undefined, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} left the faction`);
+      factionData = null;
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Leave faction failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionInvite(username) {
+  const target = document.getElementById('faction-invite-name')?.value?.trim();
+  if (!target) return;
+  sendExec(username, 'faction_invite', { player_id: target }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} invited ${target} to faction`);
+    } else {
+      appendLine('system', `Invite failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionKick(username, target) {
+  if (!confirm(`Kick ${target} from faction?`)) return;
+  sendExec(username, 'faction_kick', { player_id: target }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} kicked ${target} from faction`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Kick failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionPromote(username, target, roleId) {
+  if (!roleId) {
+    // Default promote to next role — but API requires explicit role_id
+    roleId = 'officer';
+  }
+  sendExec(username, 'faction_promote', { player_id: target, role_id: roleId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} set ${target} to ${roleId}`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Role change failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionDepositCredits(username) {
+  const amt = parseInt(document.getElementById('faction-credits-amt')?.value) || 100;
+  sendExec(username, 'faction_deposit_credits', { amount: amt }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} deposited ${amt}cr to faction treasury`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Deposit failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionWithdrawCredits(username) {
+  const amt = parseInt(document.getElementById('faction-credits-amt')?.value) || 100;
+  sendExec(username, 'faction_withdraw_credits', { amount: amt }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} withdrew ${amt}cr from faction treasury`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Withdraw failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionDepositItems(username) {
+  const itemId = document.getElementById('faction-dep-item')?.value;
+  const qty = parseInt(document.getElementById('faction-dep-qty')?.value) || 1;
+  if (!itemId) return;
+  sendExec(username, 'faction_deposit_items', { item_id: itemId, quantity: qty }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} deposited ${qty}x ${itemId} to faction storage`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Deposit items failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function fetchFactionStorage(username) {
+  const container = document.getElementById('factionStorageItems');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'view_faction_storage', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      const err = result.error || '';
+      // Detect "no storage facility" error
+      if (err.includes('storage facility') || err.includes('faction_lockbox') || err.includes('faction_build')) {
+        container.innerHTML = `
+          <div class="faction-card">
+            <div class="fc-name" style="color:var(--yellow)">No Faction Storage Here</div>
+            <div class="fc-detail" style="margin-top:4px">This station doesn't have a faction lockbox. Build one to enable faction storage at this location.</div>
+            <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+              <button class="primary sm" onclick="factionBuildLockbox('${esc(username)}')">Build Faction Lockbox</button>
+              <span style="font-size:10px;color:var(--text-dim)">Requires credits &amp; must be docked</span>
+            </div>
+          </div>`;
+      } else {
+        container.innerHTML = `<div class="faction-no-data">${esc(err || 'Could not load storage')}</div>`;
+      }
+      return;
+    }
+    const d = result.data;
+    const items = Array.isArray(d) ? d : (Array.isArray(d.items) ? d.items : Array.isArray(d.storage) ? d.storage : []);
+    const credits = d.credits ?? d.treasury ?? null;
+
+    let html = '';
+    if (credits !== null) {
+      html += `<div class="faction-storage-row"><span style="color:var(--yellow)">Credits</span><span>${Number(credits).toLocaleString()}cr</span></div>`;
+    }
+    if (items.length === 0 && credits === null) {
+      html = '<div class="faction-no-data">Storage is empty</div>';
+    } else {
+      html += items.map(i => {
+        const name = i.name || i.item_name || i.item_id || '?';
+        const qty = i.quantity || i.count || 0;
+        return `<div class="faction-storage-row"><span>${esc(name)}</span><span>x${qty}</span></div>`;
+      }).join('');
+    }
+    container.innerHTML = `<div class="faction-card" style="padding:0">${html}</div>`;
+  });
+}
+
+function fetchFactionStorageForWithdraw(username) {
+  const container = document.getElementById('factionWithdrawPanel');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'view_faction_storage', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'Could not load')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const items = Array.isArray(d) ? d : (Array.isArray(d.items) ? d.items : Array.isArray(d.storage) ? d.storage : []);
+    if (items.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No items in faction storage</div>';
+      return;
+    }
+    const opts = items.map(i => {
+      const id = i.item_id || i.id || '';
+      const name = i.name || i.item_name || id;
+      const qty = i.quantity || i.count || 0;
+      return `<option value="${esc(id)}" data-max="${qty}">${esc(name)} (${qty})</option>`;
+    }).join('');
+    container.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="faction-wit-item" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">${opts}</select>
+        <input type="number" id="faction-wit-qty" value="1" min="1" style="width:70px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+        <button class="primary sm" onclick="factionWithdrawItems('${esc(username)}')">Withdraw</button>
+      </div>
+    `;
+  });
+}
+
+function factionWithdrawItems(username) {
+  const itemId = document.getElementById('faction-wit-item')?.value;
+  const qty = parseInt(document.getElementById('faction-wit-qty')?.value) || 1;
+  if (!itemId) return;
+  sendExec(username, 'faction_withdraw_items', { item_id: itemId, quantity: qty }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} withdrew ${qty}x ${itemId} from faction storage`);
+    } else {
+      appendLine('system', `Withdraw items failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+// ── Faction Facilities ───────────────────────────────────────
+
+function factionBuildLockbox(username) {
+  appendLine('system', `${username}: Building faction lockbox...`);
+  sendExec(username, 'facility', { action: 'faction_build', facility_type: 'faction_lockbox' }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: Faction lockbox built! You can now use faction storage here.`);
+      // Reload storage
+      fetchFactionStorage(username);
+    } else {
+      appendLine('system', `Build lockbox failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function renderFactionFacilities(f, username) {
+  const bot = bots.find(b => b.username === username);
+  const docked = bot ? bot.docked : false;
+  const dockWarning = !docked
+    ? '<div style="color:var(--yellow);font-size:11px;margin-bottom:12px">Bot must be docked at a station to manage facilities.</div>'
+    : '';
+
+  return `
+    ${dockWarning}
+    <div class="faction-section">
+      <div class="faction-section-title">Faction Facilities at Current Station</div>
+      <div id="factionFacilitiesList">
+        <button class="sm" onclick="fetchFactionFacilities('${esc(username)}')" ${!docked ? 'disabled' : ''}>Load Facilities</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Build New Facility</div>
+      <div id="factionBuildableTypes">
+        <button class="sm" onclick="fetchFactionBuildableTypes('${esc(username)}')" ${!docked ? 'disabled' : ''}>Show Available Types</button>
+      </div>
+    </div>
+  `;
+}
+
+function fetchFactionFacilities(username) {
+  const container = document.getElementById('factionFacilitiesList');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'facility', { action: 'faction_list' }, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'No facilities found')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const facilities = Array.isArray(d) ? d : (Array.isArray(d.facilities) ? d.facilities : []);
+    if (facilities.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No faction facilities at this station.</div>';
+      return;
+    }
+    container.innerHTML = facilities.map(fac => {
+      const name = fac.name || fac.facility_type || fac.type || '?';
+      const facId = fac.facility_id || fac.id || '';
+      const level = fac.level ?? fac.tier ?? '';
+      const enabled = fac.enabled !== false;
+      const status = enabled ? '<span style="color:var(--green)">Active</span>' : '<span style="color:var(--red)">Disabled</span>';
+      const levelStr = level ? ` (Level ${level})` : '';
+      return `<div class="faction-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span class="fc-name">${esc(name)}${esc(levelStr)}</span>
+            <span style="margin-left:8px;font-size:10px">${status}</span>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="sm" style="font-size:10px;padding:2px 6px" onclick="factionToggleFacility('${esc(username)}','${esc(facId)}')">${enabled ? 'Disable' : 'Enable'}</button>
+            <button class="sm" style="font-size:10px;padding:2px 6px" onclick="factionCheckUpgrades('${esc(username)}','${esc(facId)}','${esc(name)}')">Upgrades</button>
+          </div>
+        </div>
+        <div id="fac-upgrades-${esc(facId)}"></div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function factionToggleFacility(username, facilityId) {
+  sendExec(username, 'facility', { action: 'toggle', facility_id: facilityId }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: Facility toggled`);
+      fetchFactionFacilities(username);
+    } else {
+      appendLine('system', `Toggle failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionCheckUpgrades(username, facilityId, facilityName) {
+  const container = document.getElementById(`fac-upgrades-${facilityId}`);
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading upgrades...</div>';
+  sendExec(username, 'facility', { action: 'upgrades', facility_id: facilityId }, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div style="font-size:11px;color:var(--text-dim);margin-top:6px">${esc(result.error || 'No upgrades available')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const upgrades = Array.isArray(d) ? d : (Array.isArray(d.upgrades) ? d.upgrades : []);
+    if (upgrades.length === 0) {
+      container.innerHTML = '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">No upgrades available (max level)</div>';
+      return;
+    }
+    container.innerHTML = '<div style="margin-top:8px;border-top:1px solid #21262d;padding-top:6px">' +
+      upgrades.map(u => {
+        const uName = u.name || u.facility_type || u.type || '?';
+        const uLevel = u.level ?? u.tier ?? '';
+        const cost = u.cost ?? u.credits ?? u.price ?? '';
+        const costStr = cost ? ` — ${Number(cost).toLocaleString()}cr` : '';
+        const mats = u.materials || u.requirements || u.components || [];
+        const matStr = Array.isArray(mats) && mats.length > 0
+          ? ' + ' + mats.map(m => `${m.quantity || 1}x ${m.name || m.item_id || '?'}`).join(', ')
+          : '';
+        const uType = u.facility_type || u.type || '';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px">
+          <div>
+            <span style="color:var(--text)">${esc(uName)}${uLevel ? ' Lv' + uLevel : ''}</span>
+            <span style="color:var(--text-dim)">${esc(costStr)}${esc(matStr)}</span>
+          </div>
+          <button class="primary sm" style="font-size:10px;padding:2px 8px" onclick="factionUpgradeFacility('${esc(username)}','${esc(facilityId)}','${esc(uType)}')">Upgrade</button>
+        </div>`;
+      }).join('') +
+    '</div>';
+  });
+}
+
+function factionUpgradeFacility(username, facilityId, facilityType) {
+  sendExec(username, 'facility', { action: 'upgrade', facility_id: facilityId, facility_type: facilityType }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: Facility upgraded!`);
+      fetchFactionFacilities(username);
+    } else {
+      appendLine('system', `Upgrade failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function fetchFactionBuildableTypes(username) {
+  const container = document.getElementById('factionBuildableTypes');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading available types...</div>';
+  sendExec(username, 'facility', { action: 'types', category: 'faction' }, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'Could not load types')}</div>`;
+      return;
+    }
+    const d = result.data;
+    const types = Array.isArray(d) ? d : (Array.isArray(d.types) ? d.types : Array.isArray(d.facilities) ? d.facilities : []);
+    if (types.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No faction facility types available</div>';
+      return;
+    }
+    container.innerHTML = types.map(t => {
+      const name = t.name || t.facility_type || t.type || '?';
+      const typeId = t.facility_type || t.type || t.id || '';
+      const desc = t.description || t.desc || '';
+      const cost = t.cost ?? t.credits ?? t.price ?? '';
+      const costStr = cost ? `${Number(cost).toLocaleString()}cr` : '';
+      const level = t.level ?? t.tier ?? '';
+      const levelStr = level ? ` (Tier ${level})` : '';
+      return `<div class="faction-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span class="fc-name">${esc(name)}${esc(levelStr)}</span>
+            ${costStr ? `<span style="font-size:11px;color:var(--yellow);margin-left:8px">${esc(costStr)}</span>` : ''}
+          </div>
+          <button class="primary sm" style="font-size:10px" onclick="factionBuildFacility('${esc(username)}','${esc(typeId)}')">Build</button>
+        </div>
+        ${desc ? `<div class="fc-detail" style="margin-top:4px">${esc(desc)}</div>` : ''}
+      </div>`;
+    }).join('');
+  });
+}
+
+function factionBuildFacility(username, facilityType) {
+  appendLine('system', `${username}: Building ${facilityType}...`);
+  sendExec(username, 'facility', { action: 'faction_build', facility_type: facilityType }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: ${facilityType} built!`);
+      fetchFactionFacilities(username);
+    } else {
+      appendLine('system', `Build failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionDiploAction(username, action) {
+  const target = document.getElementById('faction-diplo-target')?.value?.trim();
+  if (!target) { appendLine('system', 'Enter a faction name first'); return; }
+  sendExec(username, action, { faction_name: target, faction_id: target, target: target }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: ${action.replace(/_/g, ' ')} -> ${target}`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `${action.replace(/_/g, ' ')} failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionProposePeace(username, target) {
+  sendExec(username, 'faction_propose_peace', { faction_name: target, faction_id: target, target }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} proposed peace to ${target}`);
+    } else {
+      appendLine('system', `Peace proposal failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function renderQuickInviteButtons(username, currentMembers) {
+  // Show buttons to quickly invite other bots not already in the faction
+  const memberNames = new Set(currentMembers.map(m => m.username || m.name || ''));
+  const otherBots = bots.filter(b => b.username !== username && !memberNames.has(b.username));
+  if (otherBots.length === 0) return '';
+  const btns = otherBots.map(b =>
+    `<button class="sm" style="font-size:10px;padding:3px 8px" onclick="factionInviteQuick('${esc(username)}','${esc(b.username)}')">${esc(b.username)}</button>`
+  ).join('');
+  return `<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Quick invite your bots:</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${btns}</div>`;
+}
+
+function factionInviteQuick(fromUsername, targetUsername) {
+  sendExec(fromUsername, 'faction_invite', { player_id: targetUsername }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${fromUsername} invited ${targetUsername} to faction`);
+      // Auto-check invites on the target bot and accept
+      setTimeout(() => factionAutoAccept(targetUsername), 2000);
+    } else {
+      appendLine('system', `Invite ${targetUsername} failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionAutoAccept(username) {
+  // Check for pending invites on this bot and accept the first one
+  sendExec(username, 'faction_get_invites', undefined, (result) => {
+    if (!result.ok || !result.data) return;
+    const d = result.data;
+    const invites = Array.isArray(d) ? d : (Array.isArray(d.invites) ? d.invites : []);
+    if (invites.length === 0) return;
+    const inv = invites[0];
+    const fid = inv.faction_id || inv.id || '';
+    if (!fid) return;
+    sendExec(username, 'join_faction', { faction_id: fid }, (jr) => {
+      if (jr.ok) {
+        appendLine('system', `${username} auto-accepted faction invite!`);
+        // Refresh the faction page if we're viewing it
+        if (factionSelectedBot) fetchFactionInfo(factionSelectedBot);
+      } else {
+        appendLine('system', `${username} auto-accept failed: ${jr.error || 'unknown'}`);
+      }
+    });
+  });
+}
+
+function fetchFactionIntelStatus(username) {
+  const container = document.getElementById('factionIntelStatus');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'faction_intel_status', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'No intel status')}</div>`;
+      return;
+    }
+    container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0">${esc(JSON.stringify(result.data, null, 2))}</pre></div>`;
+  });
+}
+
+function factionQueryIntel(username) {
+  const query = document.getElementById('faction-intel-query')?.value?.trim();
+  if (!query) return;
+  const container = document.getElementById('factionIntelResults');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Querying...</div>';
+  sendExec(username, 'faction_query_intel', { query, system: query, target: query }, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'No results')}</div>`;
+      return;
+    }
+    container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0">${esc(JSON.stringify(result.data, null, 2))}</pre></div>`;
+  });
+}
+
+function fetchFactionTradeIntel(username) {
+  const container = document.getElementById('factionTradeIntel');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'faction_trade_intel_status', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = `<div class="faction-no-data">${esc(result.error || 'No trade intel')}</div>`;
+      return;
+    }
+    container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0">${esc(JSON.stringify(result.data, null, 2))}</pre></div>`;
+  });
+}
+
+function factionExec(username, command) {
+  sendExec(username, command, undefined, (result) => {
+    if (result.ok) {
+      factionData = result.data || factionData;
+      renderFactionContent(username);
+    } else {
+      appendLine('system', `${command} failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+// ── Explorer Settings ───────────────────────────────────────
+
+function renderExplorerSettings(panel) {
+  const explorer = settings.explorer || {};
+  const maxJumps = explorer.maxJumps ?? 20;
+  const refuelThreshold = explorer.refuelThreshold ?? 50;
+  const repairThreshold = explorer.repairThreshold ?? 40;
+  const scanPois = explorer.scanPois ?? true;
+  const surveyMode = explorer.surveyMode ?? 'thorough';
+  const avoidLowSec = explorer.avoidLowSec ?? false;
+
+  panel.innerHTML = `
+    <h3>Explorer Settings</h3>
+    <div class="settings-desc">Configure how explorer bots chart distant systems.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Max Jumps per Run</div>
+        <div class="setting-hint">Maximum number of system jumps before returning home.</div>
+      </div>
+      <input type="number" id="set-explorer-maxJumps" min="1" max="100" value="${maxJumps}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Survey Mode</div>
+        <div class="setting-hint">Thorough visits every POI; quick only scans from arrival.</div>
+      </div>
+      <select id="set-explorer-surveyMode">
+        <option value="thorough"${surveyMode === 'thorough' ? ' selected' : ''}>Thorough (visit all POIs)</option>
+        <option value="quick"${surveyMode === 'quick' ? ' selected' : ''}>Quick (scan only)</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Scan POIs</div>
+        <div class="setting-hint">Scan at each POI for ships and objects.</div>
+      </div>
+      <select id="set-explorer-scanPois">
+        <option value="true"${scanPois ? ' selected' : ''}>Yes</option>
+        <option value="false"${!scanPois ? ' selected' : ''}>No</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Avoid Low Security</div>
+        <div class="setting-hint">Skip low-security systems to reduce risk.</div>
+      </div>
+      <select id="set-explorer-avoidLowSec">
+        <option value="false"${!avoidLowSec ? ' selected' : ''}>No (explore everywhere)</option>
+        <option value="true"${avoidLowSec ? ' selected' : ''}>Yes (high/medium only)</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-explorer-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-explorer-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveExplorerSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveExplorerSettings() {
+  const s = {
+    maxJumps: parseInt(document.getElementById('set-explorer-maxJumps').value) || 20,
+    surveyMode: document.getElementById('set-explorer-surveyMode').value,
+    scanPois: document.getElementById('set-explorer-scanPois').value === 'true',
+    avoidLowSec: document.getElementById('set-explorer-avoidLowSec').value === 'true',
+    refuelThreshold: parseInt(document.getElementById('set-explorer-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-explorer-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'explorer', settings: s });
+  settings.explorer = s;
+}
+
+// ── Init ───────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>

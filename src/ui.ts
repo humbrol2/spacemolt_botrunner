@@ -1,3 +1,5 @@
+import { debugLog } from "./debug.js";
+
 const COLORS: Record<string, string> = {
   setup: "\x1b[34m",    // blue
   mining: "\x1b[32m",   // green
@@ -24,11 +26,22 @@ const DIM = "\x1b[2m";
 
 let debugEnabled = false;
 
+/** Optional global log sink — when set, log() routes here instead of console. */
+let globalLogSink: ((category: string, message: string) => void) | null = null;
+
+export function setLogSink(sink: ((category: string, message: string) => void) | null): void {
+  globalLogSink = sink;
+}
+
 export function setDebug(enabled: boolean): void {
   debugEnabled = enabled;
 }
 
 export function log(category: string, message: string): void {
+  if (globalLogSink) {
+    globalLogSink(category, message);
+    return;
+  }
   const color = COLORS[category] || COLORS.info;
   const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
   console.log(`${DIM}${timestamp}${RESET} ${color}[${category}]${RESET} ${message}`);
@@ -270,6 +283,10 @@ function parseNotification(n: unknown): { tag: string; category: string; text: s
   if (typeof n === "string") return { tag: "EVENT", category: "info", text: n };
   if (typeof n !== "object" || n === null) return null;
 
+  // Debug: log raw notification structure
+  debugLog("notification:raw", "incoming", n);
+
+
   const notif = n as Record<string, unknown>;
   const type = notif.type as string | undefined;
   const msgType = notif.msg_type as string | undefined;
@@ -297,45 +314,87 @@ function parseNotification(n: unknown): { tag: string; category: string; text: s
 
   // System notifications
   if (type === "system" && data && typeof data === "object") {
-    const message = data.message as string || JSON.stringify(data);
+    const message = (data.message as string) || formatDataObject(data);
     return { tag: "SYSTEM", category: "broadcast", text: message };
   }
 
   // Tips
   if (type === "tip" && data && typeof data === "object") {
-    const message = data.message as string || JSON.stringify(data);
+    const message = (data.message as string) || formatDataObject(data);
     return { tag: "TIP", category: "system", text: message };
   }
 
   // Combat notifications
   if (type === "combat" && data && typeof data === "object") {
-    const message = (data.message as string) || JSON.stringify(data);
+    const message = (data.message as string) || formatDataObject(data);
     return { tag: "COMBAT", category: "combat", text: message };
   }
 
   // Trade notifications
   if (type === "trade" && data && typeof data === "object") {
-    const message = (data.message as string) || JSON.stringify(data);
+    const message = (data.message as string) || formatDataObject(data);
     return { tag: "TRADE", category: "trade", text: message };
   }
 
-  // Ships / scan results
+  // Player sightings / scan / local — route to broadcast
   if ((type === "scan" || type === "ships" || type === "local") && data && typeof data === "object") {
-    const message = (data.message as string) || JSON.stringify(data);
-    return { tag: type.toUpperCase(), category: "info", text: message };
+    const message = (data.message as string) || formatDataObject(data);
+    return { tag: type.toUpperCase(), category: "broadcast", text: message };
   }
 
   // Catch-all: use whatever fields are available
   const tag = (type || msgType || "EVENT").toUpperCase();
   let message: string;
   if (data && typeof data === "object") {
-    message = (data.message as string) || (data.content as string) || JSON.stringify(data);
+    message = (data.message as string) || (data.content as string) || formatDataObject(data);
   } else if (typeof data === "string") {
     message = data;
   } else {
-    message = (notif.message as string) || (notif.content as string) || JSON.stringify(n);
+    message = (notif.message as string) || (notif.content as string) || formatDataObject(n as Record<string, unknown>);
   }
   return { tag, category: "info", text: message };
+}
+
+/** Format a notification data object into readable text instead of raw JSON. */
+function formatDataObject(data: Record<string, unknown>): string {
+  // Array of players: [{ username, poi_name, ... }, ...]
+  if (Array.isArray(data)) {
+    return (data as Array<Record<string, unknown>>)
+      .map((d) => formatDataObject(d))
+      .join("; ");
+  }
+
+  // Player sighting: { username, poi_name, poi_id, clan_tag, ... }
+  const username = data.username as string | undefined;
+  if (username) {
+    const clan = data.clan_tag ? `[${data.clan_tag}] ` : "";
+    const loc = (data.poi_name as string) || (data.poi_id as string) || "";
+    const action = (data.action as string) || (data.event as string) || "";
+    if (action === "depart" || action === "leave" || action === "left") {
+      return loc ? `${clan}${username} left ${loc}` : `${clan}${username} departed`;
+    }
+    if (action === "arrive" || action === "enter" || action === "entered") {
+      return loc ? `${clan}${username} arrived at ${loc}` : `${clan}${username} arrived`;
+    }
+    // Default: presence
+    return loc ? `${clan}${username} spotted at ${loc}` : `${clan}${username} nearby`;
+  }
+
+  // Ship data: { ship_type, ship_name, ... }
+  const shipName = (data.ship_name as string) || (data.name as string);
+  const shipType = data.ship_type as string;
+  if (shipName && shipType) {
+    return `${shipName} (${shipType})`;
+  }
+
+  // Generic: format as "key: value" pairs, skip empty/null
+  const parts: string[] = [];
+  for (const [key, val] of Object.entries(data)) {
+    if (val === null || val === undefined || val === "") continue;
+    if (typeof val === "object") continue;
+    parts.push(`${key}: ${val}`);
+  }
+  return parts.length > 0 ? parts.join(", ") : JSON.stringify(data);
 }
 
 /**
