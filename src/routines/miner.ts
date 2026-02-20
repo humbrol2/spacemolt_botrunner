@@ -58,6 +58,123 @@ function getMinerSettings(username?: string): {
   };
 }
 
+// ── Mission helpers ───────────────────────────────────────────
+
+const MINING_MISSION_KEYWORDS = ["mine", "ore", "mineral", "supply", "collect", "gather", "extract", "asteroid"];
+
+/**
+ * Accept available mining/supply missions at the current station.
+ * Respects the 5-mission cap. Non-mining missions are skipped.
+ */
+async function checkAndAcceptMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  // Check how many active missions we already have
+  const activeResp = await bot.exec("get_active_missions");
+  let activeCount = 0;
+  if (activeResp.result && typeof activeResp.result === "object") {
+    const r = activeResp.result as Record<string, unknown>;
+    const list = Array.isArray(r) ? r : Array.isArray(r.missions) ? r.missions : [];
+    activeCount = (list as unknown[]).length;
+  }
+
+  if (activeCount >= 5) return;
+
+  const availResp = await bot.exec("get_missions");
+  if (!availResp.result || typeof availResp.result !== "object") return;
+
+  const r = availResp.result as Record<string, unknown>;
+  const available = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  for (const mission of available) {
+    if (activeCount >= 5) break;
+
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+
+    const name = ((mission.name as string) || "").toLowerCase();
+    const desc = ((mission.description as string) || "").toLowerCase();
+    const type = ((mission.type as string) || "").toLowerCase();
+
+    const isMiningMission = MINING_MISSION_KEYWORDS.some(kw =>
+      name.includes(kw) || desc.includes(kw) || type.includes(kw)
+    );
+    if (!isMiningMission) continue;
+
+    const acceptResp = await bot.exec("accept_mission", { mission_id: missionId });
+    if (!acceptResp.error) {
+      activeCount++;
+      ctx.log("info", `Mission accepted: ${(mission.name as string) || missionId} (${activeCount}/5 active)`);
+    }
+  }
+}
+
+/**
+ * Attempt to complete any active missions while docked.
+ * Called before unloading cargo so mission items are still present.
+ * The server will silently reject missions whose conditions aren't met.
+ */
+async function completeActiveMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  const activeResp = await bot.exec("get_active_missions");
+  if (!activeResp.result || typeof activeResp.result !== "object") return;
+
+  const r = activeResp.result as Record<string, unknown>;
+  const missions = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  if (missions.length === 0) return;
+
+  for (const mission of missions) {
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+
+    const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+    if (!completeResp.error) {
+      const reward = (mission.reward as number) || (mission.reward_credits as number) || 0;
+      ctx.log("trade", `Mission complete: ${(mission.name as string) || missionId}${reward > 0 ? ` (+${reward} credits)` : ""}`);
+      await bot.refreshStatus();
+    }
+  }
+}
+
+/**
+ * Check if the current POI's resources are heavily depleted.
+ * Returns true if the belt is not worth mining.
+ */
+async function isBeltDepleted(ctx: RoutineContext): Promise<boolean> {
+  const poiResp = await ctx.bot.exec("get_poi");
+  if (!poiResp.result || typeof poiResp.result !== "object") return false;
+
+  const r = poiResp.result as Record<string, unknown>;
+  const resources = (
+    Array.isArray(r.resources) ? r.resources :
+    Array.isArray(r.asteroids) ? r.asteroids :
+    Array.isArray(r.ores) ? r.ores :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  if (resources.length === 0) return false; // unknown state — assume fine
+
+  const depletedCount = resources.filter(res => {
+    const depletion = (res.depletion_percent as number) ?? 0;
+    const remaining = (res.remaining as number) ?? Infinity;
+    return depletion >= 90 || remaining === 0;
+  }).length;
+
+  return depletedCount === resources.length;
+}
+
 // ── Miner routine ────────────────────────────────────────────
 
 /**
@@ -68,7 +185,7 @@ function getMinerSettings(username?: string): {
  *   2. Navigate to best belt (cross-system jumps if needed)
  *   3. Mine target ore until cargo full
  *   4. Navigate back to home station
- *   5. Sell/deposit, refuel, repair
+ *   5. Complete missions, sell/deposit, refuel, repair
  *
  * If no targetOre:
  *   Mine at nearest belt in current/configured system
@@ -234,6 +351,23 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     }
     bot.poi = beltPoi.id;
 
+    // ── Check belt depletion — switch to an alternative if exhausted ──
+    yield "check_belt";
+    if (await isBeltDepleted(ctx)) {
+      ctx.log("mining", `Belt ${beltPoi.name} is depleted — looking for an alternative`);
+      const altBelt = pois.find(p => isMinablePoi(p.type) && p.id !== beltPoi!.id);
+      if (altBelt) {
+        ctx.log("mining", `Switching to ${altBelt.name}`);
+        const altTravel = await bot.exec("travel", { target_poi: altBelt.id });
+        if (!altTravel.error || altTravel.error.message.includes("already")) {
+          beltPoi = { id: altBelt.id, name: altBelt.name };
+          bot.poi = altBelt.id;
+        }
+      } else {
+        ctx.log("mining", "No alternative belt found — will mine what remains");
+      }
+    }
+
     // ── Scavenge wrecks at belt before mining ──
     yield "scavenge";
     await scavengeWrecks(ctx);
@@ -346,6 +480,10 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     // ── Collect gifted credits/items + record market prices ──
     await collectFromStorage(ctx);
 
+    // ── Complete active missions before unloading (while cargo is still intact) ──
+    yield "complete_missions";
+    await completeActiveMissions(ctx);
+
     // ── Sell or Deposit cargo ──
     yield "unload_cargo";
     const cargoResp = await bot.exec("get_cargo");
@@ -409,6 +547,10 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
     await bot.refreshStatus();
     await bot.refreshStorage();
     ctx.log("trade", `Credits: ${bot.credits} | Cargo: ${bot.cargo}/${bot.cargoMax}`);
+
+    // ── Accept mining missions for the next cycle ──
+    yield "check_missions";
+    await checkAndAcceptMissions(ctx);
 
     // ── Refuel + Repair ──
     yield "refuel";
