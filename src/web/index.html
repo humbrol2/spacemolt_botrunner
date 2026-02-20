@@ -4588,19 +4588,32 @@ function factionCheckUpgrades(username, facilityId, facilityName) {
       upgrades.map(u => {
         const uName = u.name || u.facility_type || u.type || '?';
         const uLevel = u.level ?? u.tier ?? '';
-        const cost = u.cost ?? u.credits ?? u.price ?? '';
-        const costStr = cost ? ` — ${Number(cost).toLocaleString()}cr` : '';
-        const mats = u.materials || u.requirements || u.components || [];
-        const matStr = Array.isArray(mats) && mats.length > 0
-          ? ' + ' + mats.map(m => `${m.quantity || 1}x ${m.name || m.item_id || '?'}`).join(', ')
+        const desc = u.description || u.desc || '';
+        const cost = u.cost ?? u.credits ?? u.price ?? u.credit_cost ?? '';
+        const costStr = cost ? `${Number(cost).toLocaleString()}cr` : '';
+        const mats = u.materials || u.requirements || u.components || u.resources || u.build_cost || [];
+        let matStr = '';
+        if (Array.isArray(mats) && mats.length > 0) {
+          matStr = mats.map(m => `${m.quantity || m.count || m.amount || 1}x ${m.name || m.item_name || m.item_id || '?'}`).join(', ');
+        } else if (typeof mats === 'object' && !Array.isArray(mats) && Object.keys(mats).length > 0) {
+          matStr = Object.entries(mats).map(([k, v]) => `${v}x ${k}`).join(', ');
+        }
+        const effects = u.effects || u.bonuses || u.benefits || [];
+        const effectStr = Array.isArray(effects) && effects.length > 0
+          ? effects.map(e => typeof e === 'string' ? e : (e.description || e.name || JSON.stringify(e))).join(', ')
           : '';
         const uType = u.facility_type || u.type || '';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px">
-          <div>
-            <span style="color:var(--text)">${esc(uName)}${uLevel ? ' Lv' + uLevel : ''}</span>
-            <span style="color:var(--text-dim)">${esc(costStr)}${esc(matStr)}</span>
+        return `<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:11px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="color:var(--text);font-weight:600">${esc(uName)}${uLevel ? ' Lv' + uLevel : ''}</span>
+              ${costStr ? `<span style="color:var(--yellow);margin-left:8px">${esc(costStr)}</span>` : ''}
+            </div>
+            <button class="primary sm" style="font-size:10px;padding:2px 8px" onclick="factionUpgradeFacility('${esc(username)}','${esc(facilityId)}','${esc(uType)}')">Upgrade</button>
           </div>
-          <button class="primary sm" style="font-size:10px;padding:2px 8px" onclick="factionUpgradeFacility('${esc(username)}','${esc(facilityId)}','${esc(uType)}')">Upgrade</button>
+          ${desc ? `<div style="color:var(--text-dim);margin-top:2px">${esc(desc)}</div>` : ''}
+          ${matStr ? `<div style="color:var(--text-dim);margin-top:2px">Materials: <span style="color:var(--text)">${esc(matStr)}</span></div>` : ''}
+          ${effectStr ? `<div style="color:var(--green);margin-top:2px">${esc(effectStr)}</div>` : ''}
         </div>`;
       }).join('') +
     '</div>';
@@ -4633,26 +4646,95 @@ function fetchFactionBuildableTypes(username) {
       container.innerHTML = '<div class="faction-no-data">No faction facility types available</div>';
       return;
     }
+    // Render placeholders, then fetch full details for each type
     container.innerHTML = types.map(t => {
-      const name = t.name || t.facility_type || t.type || '?';
       const typeId = t.facility_type || t.type || t.id || '';
-      const desc = t.description || t.desc || '';
-      const cost = t.cost ?? t.credits ?? t.price ?? '';
-      const costStr = cost ? `${Number(cost).toLocaleString()}cr` : '';
-      const level = t.level ?? t.tier ?? '';
-      const levelStr = level ? ` (Tier ${level})` : '';
-      return `<div class="faction-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <span class="fc-name">${esc(name)}${esc(levelStr)}</span>
-            ${costStr ? `<span style="font-size:11px;color:var(--yellow);margin-left:8px">${esc(costStr)}</span>` : ''}
-          </div>
-          <button class="primary sm" style="font-size:10px" onclick="factionBuildFacility('${esc(username)}','${esc(typeId)}')">Build</button>
-        </div>
-        ${desc ? `<div class="fc-detail" style="margin-top:4px">${esc(desc)}</div>` : ''}
+      return `<div id="fac-type-${esc(typeId)}" class="faction-card" style="opacity:0.5">
+        <div class="fc-name">${esc(t.name || typeId)}</div>
+        <div class="fc-detail">Loading details...</div>
       </div>`;
     }).join('');
+    // Fetch full details for each type
+    for (const t of types) {
+      const typeId = t.facility_type || t.type || t.id || '';
+      if (!typeId) continue;
+      sendExec(username, 'facility', { action: 'types', facility_type: typeId }, (detailResult) => {
+        const el = document.getElementById(`fac-type-${typeId}`);
+        if (!el) return;
+        el.style.opacity = '1';
+        if (!detailResult.ok || !detailResult.data) {
+          // Fall back to summary data from the list
+          el.innerHTML = renderFacilityTypeCard(t, username);
+          return;
+        }
+        // Detail might be a single object or wrapped
+        const dd = detailResult.data;
+        const detail = Array.isArray(dd) ? dd[0] : (dd.type || dd.facility || dd);
+        el.innerHTML = renderFacilityTypeCard(detail || t, username);
+      });
+    }
   });
+}
+
+function renderFacilityTypeCard(t, username) {
+  const name = t.name || t.facility_type || t.type || '?';
+  const typeId = t.facility_type || t.type || t.id || '';
+  const desc = t.description || t.desc || '';
+  const level = t.level ?? t.tier ?? '';
+  const levelStr = level ? ` Tier ${level}` : '';
+
+  // Cost — try multiple field names
+  const cost = t.cost ?? t.credits ?? t.price ?? t.credit_cost ?? '';
+  const costStr = cost ? `${Number(cost).toLocaleString()}cr` : '';
+
+  // Material/resource requirements
+  const mats = t.materials || t.requirements || t.components || t.resources || t.build_cost || [];
+  let matsHtml = '';
+  if (Array.isArray(mats) && mats.length > 0) {
+    matsHtml = '<div style="margin-top:6px;font-size:11px"><span style="color:var(--text-dim)">Materials:</span> ' +
+      mats.map(m => {
+        const mName = m.name || m.item_name || m.item_id || m.resource || '?';
+        const mQty = m.quantity || m.count || m.amount || 1;
+        return `<span style="color:var(--text)">${mQty}x ${esc(mName)}</span>`;
+      }).join(', ') + '</div>';
+  } else if (typeof mats === 'object' && !Array.isArray(mats) && Object.keys(mats).length > 0) {
+    // Object form: { item_id: quantity }
+    matsHtml = '<div style="margin-top:6px;font-size:11px"><span style="color:var(--text-dim)">Materials:</span> ' +
+      Object.entries(mats).map(([k, v]) => `<span style="color:var(--text)">${v}x ${esc(k)}</span>`).join(', ') + '</div>';
+  }
+
+  // Bonuses / effects
+  const effects = t.effects || t.bonuses || t.benefits || t.features || [];
+  let effectsHtml = '';
+  if (Array.isArray(effects) && effects.length > 0) {
+    effectsHtml = '<div style="margin-top:4px;font-size:11px;color:var(--green)">' +
+      effects.map(e => typeof e === 'string' ? esc(e) : esc(e.description || e.name || JSON.stringify(e))).join(' | ') + '</div>';
+  }
+
+  // Capacity / stats
+  const statFields = ['capacity', 'storage_capacity', 'max_items', 'slots', 'production_rate', 'bonus'];
+  let statsHtml = '';
+  const statParts = [];
+  for (const sf of statFields) {
+    if (t[sf] != null) statParts.push(`${sf.replace(/_/g, ' ')}: ${t[sf]}`);
+  }
+  if (statParts.length > 0) {
+    statsHtml = `<div style="margin-top:4px;font-size:11px;color:var(--cyan)">${statParts.map(esc).join(' | ')}</div>`;
+  }
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="flex:1">
+        <span class="fc-name">${esc(name)}${esc(levelStr)}</span>
+        ${costStr ? `<span style="font-size:11px;color:var(--yellow);margin-left:8px">${esc(costStr)}</span>` : ''}
+        ${desc ? `<div class="fc-detail" style="margin-top:4px">${esc(desc)}</div>` : ''}
+        ${matsHtml}
+        ${effectsHtml}
+        ${statsHtml}
+      </div>
+      <button class="primary sm" style="font-size:10px;margin-left:8px;white-space:nowrap" onclick="factionBuildFacility('${esc(username)}','${esc(typeId)}')">Build</button>
+    </div>
+  `;
 }
 
 function factionBuildFacility(username, facilityType) {

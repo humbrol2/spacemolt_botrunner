@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/botmanager.ts",
+    "bots": "bun run src/botmanager.ts",
     "dashboard": "bun run src/botmanager.ts"
   },
   "devDependencies": {
