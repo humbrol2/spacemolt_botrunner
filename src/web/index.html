@@ -4405,9 +4405,8 @@ function fetchFactionStorage(username) {
           <div class="faction-card">
             <div class="fc-name" style="color:var(--yellow)">No Faction Storage Here</div>
             <div class="fc-detail" style="margin-top:4px">This station doesn't have a faction lockbox. Build one to enable faction storage at this location.</div>
-            <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-              <button class="primary sm" onclick="factionBuildLockbox('${esc(username)}')">Build Faction Lockbox</button>
-              <span style="font-size:10px;color:var(--text-dim)">Requires credits &amp; must be docked</span>
+            <div id="factionBuildLockboxPanel" style="margin-top:8px">
+              <button class="primary sm" onclick="fetchFactionBuildOptions('${esc(username)}')">Check Available Faction Facilities</button>
             </div>
           </div>`;
       } else {
@@ -4482,15 +4481,54 @@ function factionWithdrawItems(username) {
 
 // ── Faction Facilities ───────────────────────────────────────
 
-function factionBuildLockbox(username) {
-  appendLine('system', `${username}: Building faction lockbox...`);
-  sendExec(username, 'facility', { action: 'faction_build', facility_type: 'faction_lockbox' }, (result) => {
+function fetchFactionBuildOptions(username) {
+  const panel = document.getElementById('factionBuildLockboxPanel');
+  if (!panel) return;
+  panel.innerHTML = '<div class="faction-no-data">Loading faction facility types...</div>';
+  sendExec(username, 'facility', { action: 'types', category: 'faction' }, (result) => {
+    if (!result.ok || !result.data) {
+      panel.innerHTML = `<div class="faction-no-data">Could not load types: ${esc(result.error || 'unknown')}</div>
+        <pre style="font-size:10px;color:var(--text-dim);margin-top:4px">${esc(JSON.stringify(result.data, null, 2))}</pre>`;
+      return;
+    }
+    const d = result.data;
+    const types = Array.isArray(d) ? d : (Array.isArray(d.types) ? d.types : Array.isArray(d.facilities) ? d.facilities : []);
+    if (types.length === 0) {
+      // Might be a category overview — dump raw for debugging
+      panel.innerHTML = `<div class="faction-no-data">No faction types returned</div>
+        <pre style="font-size:10px;color:var(--text-dim);margin-top:4px;white-space:pre-wrap">${esc(JSON.stringify(d, null, 2))}</pre>`;
+      return;
+    }
+    panel.innerHTML = types.map(t => {
+      const typeId = t.facility_type || t.type || t.id || '';
+      const name = t.name || typeId || '?';
+      const desc = t.description || '';
+      const cost = t.cost ?? t.credits ?? t.price ?? t.credit_cost ?? '';
+      const costStr = cost ? `${Number(cost).toLocaleString()}cr` : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #21262d;font-size:12px">
+        <div>
+          <span style="color:var(--text);font-weight:500">${esc(name)}</span>
+          ${costStr ? `<span style="color:var(--yellow);margin-left:6px;font-size:11px">${esc(costStr)}</span>` : ''}
+          <span style="color:var(--text-dim);margin-left:6px;font-size:10px">${esc(typeId)}</span>
+          ${desc ? `<div style="color:var(--text-dim);font-size:11px;margin-top:2px">${esc(desc)}</div>` : ''}
+        </div>
+        <button class="primary sm" style="font-size:10px" onclick="factionBuildFacilityFromStorage('${esc(username)}','${esc(typeId)}','${esc(name)}')">Build</button>
+      </div>`;
+    }).join('');
+  });
+}
+
+function factionBuildFacilityFromStorage(username, facilityType, facilityName) {
+  if (!facilityType) { appendLine('system', 'No facility type ID'); return; }
+  appendLine('system', `${username}: Building ${facilityName} (${facilityType})...`);
+  sendExec(username, 'facility', { action: 'faction_build', facility_type: facilityType }, (result) => {
     if (result.ok) {
-      appendLine('system', `${username}: Faction lockbox built! You can now use faction storage here.`);
-      // Reload storage
+      appendLine('system', `${username}: ${facilityName} built!`);
       fetchFactionStorage(username);
     } else {
-      appendLine('system', `Build lockbox failed: ${result.error || 'unknown'}`);
+      appendLine('system', `Build failed: ${result.error || 'unknown'}`);
+      // Dump raw for debugging
+      if (result.data) appendLine('system', `Raw: ${JSON.stringify(result.data)}`);
     }
   });
 }
@@ -4514,6 +4552,12 @@ function renderFactionFacilities(f, username) {
       <div class="faction-section-title">Build New Facility</div>
       <div id="factionBuildableTypes">
         <button class="sm" onclick="fetchFactionBuildableTypes('${esc(username)}')" ${!docked ? 'disabled' : ''}>Show Available Types</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Facility Help</div>
+      <div id="factionFacilityHelp">
+        <button class="sm" onclick="fetchFacilityHelp('${esc(username)}')" ${!docked ? 'disabled' : ''}>Show API Help</button>
       </div>
     </div>
   `;
@@ -4643,7 +4687,8 @@ function fetchFactionBuildableTypes(username) {
     const d = result.data;
     const types = Array.isArray(d) ? d : (Array.isArray(d.types) ? d.types : Array.isArray(d.facilities) ? d.facilities : []);
     if (types.length === 0) {
-      container.innerHTML = '<div class="faction-no-data">No faction facility types available</div>';
+      container.innerHTML = `<div class="faction-no-data">No faction facility types found in response</div>
+        <pre style="font-size:10px;color:var(--text-dim);margin-top:4px;white-space:pre-wrap">${esc(JSON.stringify(d, null, 2))}</pre>`;
       return;
     }
     // Render placeholders, then fetch full details for each type
@@ -4746,6 +4791,16 @@ function factionBuildFacility(username, facilityType) {
     } else {
       appendLine('system', `Build failed: ${result.error || 'unknown'}`);
     }
+  });
+}
+
+function fetchFacilityHelp(username) {
+  const container = document.getElementById('factionFacilityHelp');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading...</div>';
+  sendExec(username, 'facility', { action: 'help' }, (result) => {
+    const data = result.data || result.error || 'No response';
+    container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0;max-height:400px;overflow-y:auto">${esc(typeof data === 'string' ? data : JSON.stringify(data, null, 2))}</pre></div>`;
   });
 }
 

@@ -139,6 +139,7 @@ export class Bot {
   /** Execute an API command, log the result, handle notifications. */
   async exec(command: string, payload?: Record<string, unknown>): Promise<ApiResponse> {
     this._lastAction = command;
+    debugLog("bot:exec", `${this.username} > ${command}`, payload);
     const resp = await this.api.execute(command, payload);
 
     if (resp.notifications && Array.isArray(resp.notifications) && resp.notifications.length > 0) {

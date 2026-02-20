@@ -229,6 +229,7 @@ async function handleExec(action: WebAction): Promise<WebActionResult> {
     await bot.login();
   }
 
+  debugLog("exec:handler", `${botName} > ${command}`, params);
   const resp = await bot.exec(command, params);
 
   // Refresh cached state after mutating commands
