@@ -25,6 +25,7 @@ function getTraderSettings(): {
   repairThreshold: number;
   homeSystem: string;
   tradeItems: string[];
+  autoInsure: boolean;
 } {
   const all = readSettings();
   const t = all.trader || {};
@@ -36,6 +37,7 @@ function getTraderSettings(): {
     repairThreshold: (t.repairThreshold as number) || 40,
     homeSystem: (t.homeSystem as string) || "",
     tradeItems: Array.isArray(t.tradeItems) ? (t.tradeItems as string[]) : [],
+    autoInsure: (t.autoInsure as boolean) !== false,
   };
 }
 
@@ -124,6 +126,134 @@ function findTradeOpportunities(settings: ReturnType<typeof getTraderSettings>, 
   return routes;
 }
 
+// ── Market analysis ──────────────────────────────────────────
+
+/** Call analyze_market and log top insight. Builds trading XP. Must be docked. */
+async function analyzeMarket(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  const resp = await bot.exec("analyze_market", { mode: "overview" });
+  if (!resp.error && resp.result && typeof resp.result === "object") {
+    const r = resp.result as Record<string, unknown>;
+    const insights = r.top_insights as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(insights) && insights.length > 0) {
+      const top = insights[0];
+      ctx.log("trade", `Market intel: ${(top.message as string) ?? (top.category as string) ?? "no insights"}`);
+    }
+  }
+}
+
+// ── Insurance ────────────────────────────────────────────────
+
+/**
+ * Buy ship insurance if not already covered and cargo value justifies it.
+ * Should be called while docked at source, after loading trade goods.
+ */
+async function tryInsureShip(ctx: RoutineContext, cargoValue: number): Promise<void> {
+  const { bot } = ctx;
+
+  // Skip if cargo value is trivial
+  if (cargoValue <= 0) return;
+
+  // Check for existing active policies
+  const policiesResp = await bot.exec("policies");
+  if (!policiesResp.error && policiesResp.result) {
+    const pr = policiesResp.result as Record<string, unknown>;
+    const policies = Array.isArray(pr.policies) ? pr.policies : (Array.isArray(pr) ? pr : []);
+    if ((policies as unknown[]).length > 0) return;
+  }
+
+  // Get a quote
+  const quoteResp = await bot.exec("quote");
+  if (quoteResp.error || !quoteResp.result) return;
+
+  const qr = quoteResp.result as Record<string, unknown>;
+  const quoteObj = (qr.quote as Record<string, unknown>) ?? qr;
+  const premium = (quoteObj.premium as number) ?? 0;
+
+  // Only insure if we can comfortably afford it (premium < 10% of cargo value, and we have credits to spare)
+  if (!premium || premium > cargoValue * 0.1 || bot.credits < premium * 3) return;
+
+  const insureResp = await bot.exec("insure");
+  if (!insureResp.error) {
+    ctx.log("trade", `Insured ship for trade run (premium: ${premium}cr, cargo value: ~${cargoValue}cr)`);
+    await bot.refreshStatus();
+  }
+}
+
+// ── Missions ─────────────────────────────────────────────────
+
+/**
+ * Complete any active missions that are ready, then accept new market/trade
+ * missions at the current station (up to 2 per visit, respecting the 5-mission cap).
+ * Must be docked.
+ */
+async function tryMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  // Try to complete active missions
+  const activeResp = await bot.exec("get_active_missions");
+  let activeMissionCount = 0;
+  if (!activeResp.error && activeResp.result) {
+    const ar = activeResp.result as Record<string, unknown>;
+    const active = (
+      Array.isArray(ar.missions) ? ar.missions :
+      Array.isArray(ar) ? ar :
+      []
+    ) as Array<Record<string, unknown>>;
+    activeMissionCount = active.length;
+
+    for (const mission of active) {
+      const missionId = (mission.mission_id as string) || (mission.id as string) || "";
+      if (!missionId) continue;
+      const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+      if (!completeResp.error && completeResp.result) {
+        const cr = completeResp.result as Record<string, unknown>;
+        const earned = (cr.credits_earned as number) ?? 0;
+        ctx.log("trade", `Mission complete! +${earned}cr`);
+        activeMissionCount--;
+        await bot.refreshStatus();
+      }
+    }
+  }
+
+  // Accept new market/trade missions (cap at 5 total active)
+  if (activeMissionCount >= 5) return;
+
+  const availResp = await bot.exec("get_missions");
+  if (availResp.error || !availResp.result) return;
+
+  const vr = availResp.result as Record<string, unknown>;
+  const available = (
+    Array.isArray(vr.missions) ? vr.missions :
+    Array.isArray(vr) ? vr :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  let accepted = 0;
+  for (const mission of available) {
+    if (activeMissionCount + accepted >= 5 || accepted >= 2) break;
+
+    const missionId = (mission.mission_id as string) || (mission.id as string) || "";
+    const type = ((mission.type as string) || "").toLowerCase();
+    const title = ((mission.title as string) || "").toLowerCase();
+
+    // Only accept market participation, trade, or delivery missions
+    const isTradeRelated =
+      type === "market_participation" || type === "trade" || type === "delivery" ||
+      title.includes("market") || title.includes("trade") ||
+      title.includes("sell") || title.includes("buy") || title.includes("deliver");
+
+    if (!isTradeRelated || !missionId) continue;
+
+    const acceptResp = await bot.exec("accept_mission", { mission_id: missionId });
+    if (!acceptResp.error) {
+      ctx.log("trade", `Accepted mission: ${(mission.title as string) || missionId}`);
+      accepted++;
+    }
+  }
+}
+
 // ── Trader routine ───────────────────────────────────────────
 
 /**
@@ -153,6 +283,8 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     await ensureDocked(ctx);
     if (bot.docked) {
       await recordMarketData(ctx);
+      await analyzeMarket(ctx);
+      await tryMissions(ctx);
     }
 
     // ── Fuel + hull check ──
@@ -233,8 +365,9 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
         }
       }
 
-      // Record fresh market data at source
+      // Record fresh market data at source and accept missions here too
       await recordMarketData(ctx);
+      await tryMissions(ctx);
 
       // Verify item is actually available via estimate_purchase
       yield "verify_availability";
@@ -317,6 +450,11 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
+    // Insure the loaded ship before departing (still docked at source)
+    if (settings.autoInsure) {
+      await tryInsureShip(ctx, investedCredits);
+    }
+
     // ── Phase 2: Travel to destination and sell ──
     yield "travel_to_dest";
     await ensureUndocked(ctx);
@@ -371,6 +509,7 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     }
     bot.docked = true;
     await collectFromStorage(ctx);
+    await tryMissions(ctx);
 
     // Sell items
     yield "sell";
