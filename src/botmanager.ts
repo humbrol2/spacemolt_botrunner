@@ -6,6 +6,8 @@ import { minerRoutine } from "./routines/miner.js";
 import { explorerRoutine } from "./routines/explorer.js";
 import { crafterRoutine } from "./routines/crafter.js";
 import { rescueRoutine } from "./routines/rescue.js";
+import { coordinatorRoutine } from "./routines/coordinator.js";
+import { traderRoutine } from "./routines/trader.js";
 import { mapStore } from "./mapstore.js";
 import { WebServer, type WebAction, type WebActionResult } from "./web/server.js";
 import { setLogSink } from "./ui.js";
@@ -22,6 +24,8 @@ const ROUTINES: Record<string, { name: string; fn: Routine }> = {
   explorer: { name: "Explorer", fn: explorerRoutine },
   crafter: { name: "Crafter", fn: crafterRoutine },
   rescue: { name: "FuelRescue", fn: rescueRoutine },
+  coordinator: { name: "Coordinator", fn: coordinatorRoutine },
+  trader: { name: "Trader", fn: traderRoutine },
 };
 
 // ── Auto-discover existing sessions ─────────────────────────
@@ -54,6 +58,9 @@ function setupBotLogging(bot: Bot): void {
       server.logSystem(line);
     }
     server.logActivity(line);
+    // Per-bot log for profile page activity log
+    const botLine = `${timestamp} [${category}] ${message}`;
+    server.logBot(username, botLine);
   };
 }
 
@@ -230,7 +237,19 @@ async function handleExec(action: WebAction): Promise<WebActionResult> {
   }
 
   debugLog("exec:handler", `${botName} > ${command}`, params);
-  const resp = await bot.exec(command, params);
+  let resp = await bot.exec(command, params);
+
+  // If still getting auth errors after API's internal recovery, do a full re-login and retry once
+  if (resp.error) {
+    const code = resp.error.code;
+    if (code === "session_invalid" || code === "session_expired" || code === "not_authenticated") {
+      server.logSystem(`Session lost for ${botName}, re-logging in...`);
+      const ok = await bot.login();
+      if (ok) {
+        resp = await bot.exec(command, params);
+      }
+    }
+  }
 
   // Refresh cached state after mutating commands
   const refreshCommands = new Set([

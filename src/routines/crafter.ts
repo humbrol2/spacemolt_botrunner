@@ -7,7 +7,6 @@ import {
   readSettings,
   scavengeWrecks,
   sleep,
-  logStatus,
 } from "./common.js";
 
 // ── Settings ─────────────────────────────────────────────────
@@ -56,6 +55,8 @@ function parseRecipes(data: unknown): Recipe[] {
   let raw: Array<Record<string, unknown>> = [];
   if (Array.isArray(d)) {
     raw = d;
+  } else if (Array.isArray(d.items)) {
+    raw = d.items as Array<Record<string, unknown>>;
   } else if (Array.isArray(d.recipes)) {
     raw = d.recipes as Array<Record<string, unknown>>;
   } else {
@@ -70,20 +71,59 @@ function parseRecipes(data: unknown): Recipe[] {
 
   return raw.map(r => {
     const comps = (r.components || r.ingredients || r.inputs || r.materials || []) as Array<Record<string, unknown>>;
-    const output = (r.output || r.result || r.produces || {}) as Record<string, unknown>;
+
+    // outputs may be an array (catalog) or a single object (legacy)
+    const rawOutputs = r.outputs || r.output || r.result || r.produces;
+    const output: Record<string, unknown> = Array.isArray(rawOutputs)
+      ? (rawOutputs[0] as Record<string, unknown>) || {}
+      : (rawOutputs as Record<string, unknown>) || {};
+
     return {
       recipe_id: (r.recipe_id as string) || (r.id as string) || "",
       name: (r.name as string) || (r.recipe_id as string) || "",
       components: comps.map(c => ({
-        item_id: (c.item_id as string) || (c.id as string) || "",
-        name: (c.name as string) || (c.item_id as string) || "",
-        quantity: (c.quantity as number) || 1,
+        item_id: (c.item_id as string) || (c.id as string) || (c.item as string) || "",
+        name: (c.name as string) || (c.item_name as string) || (c.item_id as string) || (c.id as string) || "",
+        quantity: (c.quantity as number) || (c.amount as number) || (c.count as number) || 1,
       })),
-      output_item_id: (output.item_id as string) || (output.id as string) || (r.output_item_id as string) || "",
+      output_item_id: (output.item_id as string) || (output.id as string) || (output.item as string) || (r.output_item_id as string) || "",
       output_name: (output.name as string) || (output.item_name as string) || (r.name as string) || "",
-      output_quantity: (output.quantity as number) || 1,
+      output_quantity: (output.quantity as number) || (output.amount as number) || (output.count as number) || 1,
     };
   }).filter(r => r.recipe_id);
+}
+
+/** Fetch all recipes from the catalog API, handling pagination. */
+async function fetchAllRecipes(ctx: RoutineContext): Promise<Recipe[]> {
+  const { bot } = ctx;
+  const all: Recipe[] = [];
+  let page = 1;
+  const pageSize = 50;
+
+  while (true) {
+    const resp = await bot.exec("catalog", { type: "recipes", page, page_size: pageSize });
+
+    if (resp.error) {
+      ctx.log("error", `Catalog fetch failed (page ${page}): ${resp.error.message}`);
+      break;
+    }
+
+    const r = resp.result as Record<string, unknown> | undefined;
+    const totalPages = (r?.total_pages as number) || 1;
+    const total = (r?.total as number) || 0;
+
+    if (page === 1) {
+      ctx.log("info", `${total} recipes loaded`);
+    }
+
+    const parsed = parseRecipes(resp.result);
+    all.push(...parsed);
+
+    if (page >= totalPages || parsed.length === 0) break;
+    page++;
+  }
+
+  return all;
 }
 
 /** Count how many of an item exist in cargo + storage. */
@@ -99,12 +139,15 @@ function countItem(ctx: RoutineContext, itemId: string): number {
   return total;
 }
 
-/** Check if we have materials for a recipe (cargo + storage). */
-function haveMaterials(ctx: RoutineContext, recipe: Recipe): boolean {
+/** Check if we have materials for a recipe. Returns missing item info or null if all present. */
+function getMissingMaterial(ctx: RoutineContext, recipe: Recipe): { name: string; need: number; have: number } | null {
   for (const comp of recipe.components) {
-    if (countItem(ctx, comp.item_id) < comp.quantity) return false;
+    const have = countItem(ctx, comp.item_id);
+    if (have < comp.quantity) {
+      return { name: comp.name || comp.item_id, need: comp.quantity, have };
+    }
   }
-  return true;
+  return null;
 }
 
 // ── Crafter routine ──────────────────────────────────────────
@@ -141,19 +184,16 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
     // ── Dock at station ──
     yield "dock";
     await bot.refreshStatus();
-    logStatus(ctx);
     await ensureDocked(ctx);
 
-    // ── Fetch recipes ──
-    yield "get_recipes";
-    const recipesResp = await bot.exec("get_recipes");
-    const recipes = parseRecipes(recipesResp.result);
+    // ── Fetch recipes via catalog ──
+    yield "fetch_recipes";
+    const recipes = await fetchAllRecipes(ctx);
     if (recipes.length === 0) {
       ctx.log("error", "No recipes available — waiting 60s");
       await sleep(60000);
       continue;
     }
-    ctx.log("info", `${recipes.length} recipes available`);
 
     // ── Refresh inventory ──
     await bot.refreshCargo();
@@ -161,13 +201,24 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // ── Process each configured limit ──
     let totalCrafted = 0;
+    const craftedSummary: string[] = [];   // "5x Fuel Cells"
+    const missingSummary: string[] = [];   // "Armor Plate (2x refined_titanium)"
+    const atLimitCount = { count: 0 };
 
     for (const { recipeId, limit } of settings.craftLimits) {
       if (bot.state !== "running") break;
 
-      const recipe = recipes.find(r => r.recipe_id === recipeId);
+      const recipe = recipes.find(r =>
+        r.recipe_id === recipeId ||
+        r.name === recipeId ||
+        r.name.toLowerCase() === recipeId.toLowerCase()
+      );
       if (!recipe) {
-        ctx.log("error", `Recipe "${recipeId}" not found — skipping`);
+        const similar = recipes
+          .filter(r => r.recipe_id.toLowerCase().includes(recipeId.toLowerCase()) || r.name.toLowerCase().includes(recipeId.toLowerCase()))
+          .slice(0, 5)
+          .map(r => `${r.recipe_id} (${r.name})`);
+        ctx.log("error", `Recipe "${recipeId}" not found${similar.length > 0 ? ` — similar: ${similar.join(", ")}` : ""}`);
         continue;
       }
 
@@ -176,60 +227,60 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       const needed = limit - currentStock;
 
       if (needed <= 0) {
-        ctx.log("info", `${recipe.name}: ${currentStock}/${limit} — at limit`);
+        atLimitCount.count++;
         continue;
       }
-
-      ctx.log("craft", `${recipe.name}: ${currentStock}/${limit} — need to craft ${needed} more`);
 
       // Craft in batches
       let crafted = 0;
       while (crafted < needed && bot.state === "running") {
-        // Refresh inventory before checking materials
         await bot.refreshCargo();
         if (bot.docked) await bot.refreshStorage();
 
-        if (!haveMaterials(ctx, recipe)) {
-          ctx.log("craft", `${recipe.name}: out of materials after crafting ${crafted}`);
+        const missing = getMissingMaterial(ctx, recipe);
+        if (missing) {
+          missingSummary.push(`${recipe.name} (${missing.need}x ${missing.name})`);
           break;
         }
 
-        // Craft up to 10 at a time (API batch limit)
         const remaining = needed - crafted;
         const batchSize = Math.min(remaining, 10);
 
         yield `craft_${recipeId}`;
-        ctx.log("craft", `Crafting ${batchSize}x ${recipe.name}...`);
         const craftResp = await bot.exec("craft", { recipe_id: recipeId, count: batchSize });
 
         if (craftResp.error) {
           const msg = craftResp.error.message.toLowerCase();
-          if (msg.includes("material") || msg.includes("component") || msg.includes("insufficient")) {
-            ctx.log("craft", `${recipe.name}: insufficient materials`);
-            break;
-          }
           if (msg.includes("skill")) {
-            ctx.log("craft", `${recipe.name}: insufficient skill level`);
-            break;
+            missingSummary.push(`${recipe.name} (skill too low)`);
+          } else if (msg.includes("material") || msg.includes("component") || msg.includes("insufficient")) {
+            missingSummary.push(`${recipe.name} (no materials)`);
+          } else {
+            ctx.log("error", `Craft ${recipe.name}: ${craftResp.error.message}`);
           }
-          ctx.log("error", `Craft failed: ${craftResp.error.message}`);
           break;
         }
 
-        // Parse how many were actually crafted
         const result = craftResp.result as Record<string, unknown> | undefined;
         const actualCount = (result?.count as number) || (result?.quantity as number) || batchSize;
         crafted += actualCount;
         totalCrafted += actualCount;
+      }
 
-        ctx.log("craft", `${recipe.name}: crafted ${crafted}/${needed} (total stock: ${currentStock + crafted}/${limit})`);
+      if (crafted > 0) {
+        craftedSummary.push(`${crafted}x ${recipe.name}`);
       }
     }
 
-    if (totalCrafted > 0) {
-      ctx.log("info", `=== Crafting cycle complete: ${totalCrafted} items crafted ===`);
+    // ── Single summary line ──
+    const parts: string[] = [];
+    if (craftedSummary.length > 0) parts.push(`Crafted ${craftedSummary.join(", ")}`);
+    if (atLimitCount.count > 0) parts.push(`${atLimitCount.count} at limit`);
+    if (missingSummary.length > 0) parts.push(`Missing materials: ${missingSummary.join(", ")}`);
+    if (parts.length > 0) {
+      ctx.log("craft", parts.join(". "));
     } else {
-      ctx.log("info", "=== Crafting cycle complete: nothing to craft ===");
+      ctx.log("craft", "Nothing to craft");
     }
 
     // ── Refuel + Repair ──
