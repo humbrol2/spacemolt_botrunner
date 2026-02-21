@@ -18,6 +18,7 @@ function getCoordinatorSettings(): {
   autoAdjustOre: boolean;
   autoAdjustCraft: boolean;
   targetItems: string[];
+  useGlobalMarket: boolean;
 } {
   const all = readSettings();
   const c = all.coordinator || {};
@@ -28,6 +29,7 @@ function getCoordinatorSettings(): {
     autoAdjustOre: c.autoAdjustOre !== false,
     autoAdjustCraft: c.autoAdjustCraft !== false,
     targetItems: Array.isArray(c.targetItems) ? (c.targetItems as string[]) : [],
+    useGlobalMarket: c.useGlobalMarket !== false,
   };
 }
 
@@ -46,6 +48,92 @@ interface DemandEntry {
   totalValue: number;
   bestPrice: number;
   stations: string[];
+}
+
+interface GlobalMarketEntry {
+  item_id: string;
+  item_name: string;
+  category: string;
+  base_value: number;
+  empire: string;
+  best_bid: number;
+  best_ask: number;
+  bid_quantity: number;
+  ask_quantity: number;
+}
+
+interface GlobalMarketData {
+  /** Best buy demand across all empires per item. */
+  bidByItem: Map<string, { bestPrice: number; totalQty: number; empires: string[] }>;
+  /** Lowest ask (cheapest to buy) per item — used for material cost estimation. */
+  askByItem: Map<string, number>;
+  /** Reference base values per item — fallback when ask is unknown. */
+  baseValues: Map<string, number>;
+}
+
+// ── Global market fetch ──────────────────────────────────────
+
+const GLOBAL_MARKET_URL = "https://game.spacemolt.com/api/market";
+
+async function fetchGlobalMarket(
+  log: (tag: string, msg: string) => void,
+): Promise<GlobalMarketData | null> {
+  try {
+    const resp = await fetch(GLOBAL_MARKET_URL, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) {
+      log("error", `Global market fetch failed: HTTP ${resp.status}`);
+      return null;
+    }
+
+    const raw = await resp.json() as unknown;
+    const entries: GlobalMarketEntry[] = Array.isArray(raw)
+      ? (raw as GlobalMarketEntry[])
+      : Array.isArray((raw as Record<string, unknown>).items)
+        ? ((raw as Record<string, unknown>).items as GlobalMarketEntry[])
+        : [];
+
+    const bidByItem = new Map<string, { bestPrice: number; totalQty: number; empires: string[] }>();
+    const askByItem = new Map<string, number>();
+    const baseValues = new Map<string, number>();
+
+    for (const entry of entries) {
+      const id = entry.item_id;
+      if (!id) continue;
+
+      if (entry.base_value > 0) baseValues.set(id, entry.base_value);
+
+      if (entry.best_bid > 0 && entry.bid_quantity > 0) {
+        const existing = bidByItem.get(id);
+        if (!existing) {
+          bidByItem.set(id, {
+            bestPrice: entry.best_bid,
+            totalQty: entry.bid_quantity,
+            empires: [entry.empire],
+          });
+        } else {
+          if (entry.best_bid > existing.bestPrice) existing.bestPrice = entry.best_bid;
+          existing.totalQty += entry.bid_quantity;
+          if (!existing.empires.includes(entry.empire)) existing.empires.push(entry.empire);
+        }
+      }
+
+      // Track lowest ask for material cost estimation
+      if (entry.best_ask > 0 && entry.ask_quantity > 0) {
+        const existing = askByItem.get(id);
+        if (existing === undefined || entry.best_ask < existing) {
+          askByItem.set(id, entry.best_ask);
+        }
+      }
+    }
+
+    log("coord", `Global market: ${entries.length} entries, ${bidByItem.size} items with buy demand`);
+    return { bidByItem, askByItem, baseValues };
+  } catch (err) {
+    log("error", `Global market fetch error: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 // ── Recipe parsing ───────────────────────────────────────────
@@ -117,8 +205,12 @@ async function fetchAllRecipes(ctx: RoutineContext): Promise<Recipe[]> {
 
 // ── Demand analysis helpers ──────────────────────────────────
 
-/** Build a map of items with buy orders across all known markets. */
-function buildDemandMap(): Map<string, DemandEntry> {
+/**
+ * Build a map of items with buy orders across all known markets.
+ * If global market data is provided, supplements local data with empire-wide
+ * demand for items not yet seen on any visited station.
+ */
+function buildDemandMap(global?: GlobalMarketData): Map<string, DemandEntry> {
   const demand = new Map<string, DemandEntry>();
   const allBuys = mapStore.getAllBuyDemand();
 
@@ -138,20 +230,61 @@ function buildDemandMap(): Map<string, DemandEntry> {
     }
   }
 
+  // Supplement with global API data — adds items not seen locally, and
+  // updates bestPrice when global buyers are paying more than local ones.
+  if (global) {
+    for (const [itemId, bid] of global.bidByItem) {
+      const existing = demand.get(itemId);
+      if (!existing) {
+        demand.set(itemId, {
+          totalValue: bid.bestPrice * bid.totalQty,
+          bestPrice: bid.bestPrice,
+          stations: bid.empires.map(e => `[${e}]`),
+        });
+      } else if (bid.bestPrice > existing.bestPrice) {
+        existing.bestPrice = bid.bestPrice;
+        for (const empire of bid.empires) {
+          const tag = `[${empire}]`;
+          if (!existing.stations.includes(tag)) existing.stations.push(tag);
+        }
+      }
+    }
+  }
+
   return demand;
 }
 
-/** Calculate profit margin for crafting a recipe and selling at the demand price. */
-function calculateCraftProfit(recipe: Recipe, demandPrice: number): { profitPct: number; materialCost: number } {
+/**
+ * Calculate profit margin for crafting a recipe and selling at the demand price.
+ * Falls back to global ask prices, then base values, for material cost when
+ * no local market data is available.
+ */
+function calculateCraftProfit(
+  recipe: Recipe,
+  demandPrice: number,
+  globalAskMap?: Map<string, number>,
+  baseValues?: Map<string, number>,
+): { profitPct: number; materialCost: number } {
   let materialCost = 0;
 
   for (const comp of recipe.components) {
     const bestSell = mapStore.findBestSellPrice(comp.item_id);
-    if (!bestSell) {
+    let unitPrice: number | null = null;
+
+    if (bestSell) {
+      unitPrice = bestSell.price;
+    } else if (globalAskMap) {
+      unitPrice = globalAskMap.get(comp.item_id) ?? null;
+    }
+    if (unitPrice === null && baseValues) {
+      unitPrice = baseValues.get(comp.item_id) ?? null;
+    }
+
+    if (unitPrice === null) {
       // Unknown material cost — can't estimate profitability
       return { profitPct: -1, materialCost: -1 };
     }
-    materialCost += bestSell.price * comp.quantity;
+    materialCost += unitPrice * comp.quantity;
   }
 
   if (materialCost <= 0) return { profitPct: -1, materialCost: 0 };
@@ -203,13 +336,15 @@ function findMostNeededOre(
  * Coordinator routine — stays docked, analyzes market demand, and auto-adjusts
  * crafter craftLimits and miner targetOre in settings.json.
  *
- * 1. Scan mapStore for all market data across known stations
- * 2. Build demand map: items with buy orders
- * 3. Fetch recipe catalog
- * 4. For each in-demand item that can be crafted, calculate profitability
- * 5. Update crafter craftLimits for profitable recipes
- * 6. Update miner targetOre for most-needed raw material
- * 7. Sleep, repeat
+ * 1. Fetch global market data from /api/market (no auth needed)
+ * 2. Scan mapStore for all local market data across visited stations
+ * 3. Build demand map: merge local (priority) + global (supplement)
+ * 4. Fetch recipe catalog
+ * 5. For each in-demand item that can be crafted, calculate profitability
+ *    (uses global ask prices / base_values as material cost fallback)
+ * 6. Update crafter craftLimits for profitable recipes
+ * 7. Update miner targetOre for most-needed raw material
+ * 8. Sleep, repeat
  */
 export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext) {
   const { bot } = ctx;
@@ -223,6 +358,13 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
     yield "dock";
     await ensureDocked(ctx);
 
+    // ── Fetch global market data ──
+    let globalMarket: GlobalMarketData | undefined;
+    if (settings.useGlobalMarket) {
+      yield "fetch_global_market";
+      globalMarket = (await fetchGlobalMarket(ctx.log)) ?? undefined;
+    }
+
     // ── Refresh market data at current station ──
     yield "refresh_market";
     if (bot.docked) {
@@ -234,7 +376,7 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
 
     // ── Build demand map ──
     yield "analyze_demand";
-    const demandMap = buildDemandMap();
+    const demandMap = buildDemandMap(globalMarket);
 
     if (demandMap.size === 0) {
       ctx.log("coord", "No buy demand found on any known market — waiting for explorer/market data");
@@ -242,7 +384,9 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
       continue;
     }
 
-    ctx.log("coord", `Found demand for ${demandMap.size} item(s) across known markets`);
+    const localCount = mapStore.getAllBuyDemand().length;
+    const globalCount = demandMap.size - localCount;
+    ctx.log("coord", `Found demand for ${demandMap.size} item(s) (${localCount} local, ${globalCount > 0 ? `+${globalCount} from global API` : "0 global supplement"})`);
 
     // ── Fetch recipes ──
     yield "fetch_recipes";
@@ -256,7 +400,7 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
 
     // ── Analyze profitability ──
     yield "calculate_profit";
-    const profitable: Array<{ recipe: Recipe; profitPct: number; demandPrice: number }> = [];
+    const profitable: Array<{ recipe: Recipe; profitPct: number; demandPrice: number; usedFallback: boolean }> = [];
 
     for (const recipe of recipes) {
       const outputId = recipe.output_item_id || recipe.recipe_id;
@@ -272,9 +416,17 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
         if (!match) continue;
       }
 
-      const { profitPct } = calculateCraftProfit(recipe, demand.bestPrice);
+      // First try without fallback (fully locally-priced)
+      const { profitPct: localProfitPct } = calculateCraftProfit(recipe, demand.bestPrice);
+      const usedFallback = localProfitPct < 0;
+
+      // If local data is incomplete, retry with global fallbacks
+      const { profitPct } = usedFallback
+        ? calculateCraftProfit(recipe, demand.bestPrice, globalMarket?.askByItem, globalMarket?.baseValues)
+        : { profitPct: localProfitPct };
+
       if (profitPct >= settings.minProfitMargin) {
-        profitable.push({ recipe, profitPct, demandPrice: demand.bestPrice });
+        profitable.push({ recipe, profitPct, demandPrice: demand.bestPrice, usedFallback });
       }
     }
 
@@ -290,7 +442,7 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
       const newLimits: Record<string, number> = { ...currentLimits };
 
       const adjustments: string[] = [];
-      for (const { recipe, profitPct } of profitable) {
+      for (const { recipe, profitPct, usedFallback } of profitable) {
         const recipeId = recipe.recipe_id;
         // Scale limit by profit margin — higher profit = higher limit
         const scaledLimit = Math.min(
@@ -301,7 +453,8 @@ export const coordinatorRoutine: Routine = async function* (ctx: RoutineContext)
         const prev = newLimits[recipeId] || 0;
         if (scaledLimit > prev) {
           newLimits[recipeId] = scaledLimit;
-          adjustments.push(`${recipe.name}: ${prev} → ${scaledLimit} (${Math.round(profitPct)}% margin)`);
+          const suffix = usedFallback ? " ~est" : "";
+          adjustments.push(`${recipe.name}: ${prev} → ${scaledLimit} (${Math.round(profitPct)}%${suffix})`);
         }
       }
 
