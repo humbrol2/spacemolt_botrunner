@@ -329,6 +329,19 @@ async function main(): Promise<void> {
   server.logSystem("Loading saved sessions...");
 
   discoverBots();
+
+  // Seed galaxy map from public API so pathfinding works from first run
+  server.logSystem("Seeding galaxy map from /api/map...");
+  mapStore.seedFromMapAPI().then(({ seeded, known, failed }) => {
+    if (failed) {
+      server.logSystem("Galaxy map seed failed — will rely on exploration data");
+    } else {
+      server.logSystem(`Galaxy map seeded: ${seeded} new system(s), ${known} already known`);
+    }
+  }).catch(() => {
+    server.logSystem("Galaxy map seed failed — will rely on exploration data");
+  });
+
   if (bots.size > 0) {
     server.logSystem(`Found ${bots.size} saved bot(s): ${[...bots.keys()].join(", ")}`);
     for (const [, bot] of bots) {
