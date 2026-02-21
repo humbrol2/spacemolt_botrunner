@@ -215,7 +215,17 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
     bot.docked = true;
-    await collectFromStorage(ctx);
+
+    // Withdraw only credits from storage (don't pull items — we need cargo space for trade goods)
+    const storageResp = await bot.exec("view_storage");
+    if (storageResp.result && typeof storageResp.result === "object") {
+      const sr = storageResp.result as Record<string, unknown>;
+      const storedCredits = (sr.credits as number) || (sr.stored_credits as number) || 0;
+      if (storedCredits > 0) {
+        await bot.exec("withdraw_credits", { amount: storedCredits });
+        ctx.log("trade", `Withdrew ${storedCredits} credits from storage`);
+      }
+    }
 
     // Record fresh market data at source
     await recordMarketData(ctx);
@@ -223,20 +233,23 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     // Clear cargo: keep 3 fuel cells, deposit everything else to storage
     const RESERVE_FUEL_CELLS = 3;
     await bot.refreshCargo();
+    const depositSummary: string[] = [];
     for (const item of bot.inventory) {
       const lower = item.itemId.toLowerCase();
       const isFuel = lower.includes("fuel") || lower.includes("energy_cell");
       if (isFuel) {
-        // Keep up to RESERVE_FUEL_CELLS, deposit the rest
         const excess = item.quantity - RESERVE_FUEL_CELLS;
         if (excess > 0) {
-          ctx.log("trade", `Depositing ${excess}x ${item.name} (keeping ${RESERVE_FUEL_CELLS})...`);
           await bot.exec("deposit_items", { item_id: item.itemId, quantity: excess });
+          depositSummary.push(`${excess}x ${item.name}`);
         }
       } else {
-        ctx.log("trade", `Depositing ${item.quantity}x ${item.name} to free cargo...`);
         await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        depositSummary.push(`${item.quantity}x ${item.name}`);
       }
+    }
+    if (depositSummary.length > 0) {
+      ctx.log("trade", `Cleared cargo: ${depositSummary.join(", ")}`);
     }
 
     // Ensure we have at least RESERVE_FUEL_CELLS fuel cells (buy if needed)
