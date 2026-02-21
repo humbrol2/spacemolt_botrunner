@@ -628,6 +628,7 @@
   .log-entry .log-cat-mining { color: #f0883e; }
   .log-entry .log-cat-trade { color: #3fb950; }
   .log-entry .log-cat-rescue { color: #f778ba; }
+  .log-entry .log-cat-combat { color: #f85149; }
   .log-entry .log-cat-info { color: #8b949e; }
   .log-entry .log-msg { color: var(--text); }
   .exec-cooldown { opacity: 0.5; pointer-events: none; }
@@ -3172,7 +3173,7 @@ let botLogBuffers = {};
 const LOG_CAT_CLASSES = {
   system: 'log-cat-system', error: 'log-cat-error', travel: 'log-cat-travel',
   mining: 'log-cat-mining', trade: 'log-cat-trade', rescue: 'log-cat-rescue',
-  info: 'log-cat-info',
+  combat: 'log-cat-combat', info: 'log-cat-info',
 };
 
 function formatBotLogLine(line) {
@@ -4738,7 +4739,8 @@ function appendLine(panel, line) {
 function makeLogLine(text) {
   const div = document.createElement('div');
   div.className = 'log-line';
-  const m = text.match(/\[(\w+)\]/);
+  // Format: "HH:MM:SS [username] [category] msg" — capture the second bracket (category)
+  const m = text.match(/\[\w+\]\s*\[(\w+)\]/);
   if (m) div.classList.add(`cat-${m[1].toLowerCase()}`);
   div.textContent = text;
   return div;

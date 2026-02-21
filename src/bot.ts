@@ -103,6 +103,14 @@ export class Bot {
   /** Cached skill levels for detecting level-ups. */
   private skillLevels: Map<string, number> = new Map();
 
+  /** Timestamp of the last faction combat alert (ms). Rate-limits chat spam. */
+  private lastCombatAlertMs = 0;
+  private static readonly COMBAT_ALERT_COOLDOWN_MS = 30_000;
+
+  /** Timestamp of the last combat warning alert (separate from hull-damage alerts). */
+  private lastWarningAlertMs = 0;
+  private static readonly WARNING_ALERT_COOLDOWN_MS = 60_000;
+
   constructor(username: string, baseDir: string) {
     this.username = username;
     this.api = new SpaceMoltAPI();
@@ -144,6 +152,7 @@ export class Bot {
 
     if (resp.notifications && Array.isArray(resp.notifications) && resp.notifications.length > 0) {
       logNotifications(resp.notifications);
+      await this.handleNotifications(resp.notifications);
     }
 
     if (resp.error) {
@@ -151,6 +160,153 @@ export class Bot {
     }
 
     return resp;
+  }
+
+  /**
+   * Route notifications to the bot's own activity log and detect hull damage.
+   * Uses this.api.execute() directly (not this.exec()) to avoid recursion.
+   */
+  private async handleNotifications(notifications: unknown[]): Promise<void> {
+    for (const n of notifications) {
+      if (typeof n !== "object" || !n) {
+        if (typeof n === "string") this.log("info", `[NOTIFY] ${n}`);
+        continue;
+      }
+
+      const notif = n as Record<string, unknown>;
+      const type = notif.type as string | undefined;
+      const msgType = notif.msg_type as string | undefined;
+
+      // Chat messages are already displayed by logNotifications — skip
+      if (msgType === "chat_message") continue;
+
+      let data = notif.data as Record<string, unknown> | string | undefined;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data) as Record<string, unknown>; } catch { /* leave as string */ }
+      }
+
+      if (type === "system" && data && typeof data === "object") {
+        const d = data as Record<string, unknown>;
+
+        if (d.damage !== undefined) {
+          // Combat damage notification — log to bot's activity log
+          const pirateName = (d.pirate_name as string) || "Unknown";
+          const pirateT    = (d.pirate_tier as string) || "";
+          const damage     = (d.damage as number) ?? 0;
+          const damageType = (d.damage_type as string) || "";
+          const yourHull   = d.your_hull as number | undefined;
+          const maxHull    = d.your_max_hull as number | undefined;
+          const yourShield = d.your_shield as number | undefined;
+
+          const hullStr   = yourHull !== undefined && maxHull !== undefined
+            ? ` | Hull: ${yourHull}/${maxHull} (${maxHull > 0 ? Math.round((yourHull / maxHull) * 100) : 100}%)`
+            : "";
+          const shieldStr = yourShield !== undefined ? ` | Shield: ${yourShield}` : "";
+
+          this.log("combat",
+            `UNDER ATTACK! ${pirateName}${pirateT ? ` (${pirateT})` : ""} dealt ${damage} ${damageType} dmg${hullStr}${shieldStr}`
+          );
+
+          // Faction alert on any damage event (cooldown prevents spam)
+          const now = Date.now();
+          if (now - this.lastCombatAlertMs > Bot.COMBAT_ALERT_COOLDOWN_MS) {
+            this.lastCombatAlertMs = now;
+            await this.sendCombatFactionAlert(
+              pirateName, pirateT, damage, damageType,
+              yourHull ?? this.hull, maxHull ?? this.maxHull, yourShield,
+            );
+          }
+
+          // Update cached hull/shield from notification
+          if (yourHull !== undefined) this.hull = yourHull;
+          if (yourShield !== undefined) this.shield = yourShield;
+
+        } else {
+          // Generic system message — detect combat warnings
+          const message = (d.message as string) || "";
+          if (message) {
+            const msgLower = message.toLowerCase();
+            const isCombatWarning =
+              msgLower.includes("attack") ||
+              msgLower.includes("detected you") ||
+              msgLower.includes("hostile");
+            this.log(isCombatWarning ? "combat" : "info", `[SYSTEM] ${message}`);
+            if (isCombatWarning) {
+              const now = Date.now();
+              if (now - this.lastWarningAlertMs > Bot.WARNING_ALERT_COOLDOWN_MS) {
+                this.lastWarningAlertMs = now;
+                await this.sendWarningFactionAlert(message);
+              }
+            }
+          }
+        }
+
+      } else if (type === "combat" && data && typeof data === "object") {
+        const d = data as Record<string, unknown>;
+        const message = (d.message as string) || "";
+        if (message) this.log("combat", `[COMBAT] ${message}`);
+      }
+    }
+  }
+
+  /** Post a faction chat alert with attack details, location, and nearby entities. */
+  private async sendCombatFactionAlert(
+    pirateName: string,
+    pirateT: string,
+    damage: number,
+    damageType: string,
+    yourHull: number,
+    maxHull: number,
+    yourShield: number | undefined,
+  ): Promise<void> {
+    try {
+      // Fetch nearby players/pirates — query, no tick cost
+      let nearbyInfo = "";
+      const nearbyResp = await this.api.execute("get_nearby");
+      if (nearbyResp.result && typeof nearbyResp.result === "object") {
+        const nearby = nearbyResp.result as Record<string, unknown>;
+
+        const players = Array.isArray(nearby.players)
+          ? (nearby.players as Array<Record<string, unknown>>)
+          : [];
+        const pirates = Array.isArray(nearby.pirates)
+          ? (nearby.pirates as Array<Record<string, unknown>>)
+          : [];
+
+        if (players.length > 0) {
+          const names = players
+            .map(p => (p.username as string) || (p.name as string) || "?")
+            .join(", ");
+          nearbyInfo += ` | Players: ${names}`;
+        }
+        if (pirates.length > 0) {
+          const ps = pirates
+            .map(p => `${(p.name as string) || (p.type as string) || "?"}${p.tier ? ` (${p.tier})` : ""}`)
+            .join(", ");
+          nearbyInfo += ` | Pirates: ${ps}`;
+        }
+      }
+
+      const hullPct = maxHull > 0 ? Math.round((yourHull / maxHull) * 100) : 100;
+      const shieldStr = yourShield !== undefined ? ` Shield: ${yourShield}` : "";
+      const content = `[HULL DAMAGE] ${this.username} hit by ${pirateName}${pirateT ? ` (${pirateT})` : ""} — ${damage} ${damageType} dmg | Hull: ${yourHull}/${maxHull} (${hullPct}%)${shieldStr} | ${this.system}/${this.poi}${nearbyInfo}`;
+
+      await this.api.execute("chat", { channel: "faction", content });
+      this.log("combat", `Faction alert sent: ${pirateName} at ${this.system}`);
+    } catch (err) {
+      this.log("error", `Combat alert failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Post a faction chat warning about an imminent attack or pirate detection. */
+  private async sendWarningFactionAlert(message: string): Promise<void> {
+    try {
+      const content = `[COMBAT WARNING] ${this.username} — ${message} | ${this.system}/${this.poi}`;
+      await this.api.execute("chat", { channel: "faction", content });
+      this.log("combat", `Faction warning sent`);
+    } catch (err) {
+      this.log("error", `Warning alert failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** Login using stored credentials. Returns true on success. */
