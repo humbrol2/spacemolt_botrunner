@@ -220,13 +220,36 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     // Record fresh market data at source
     await recordMarketData(ctx);
 
-    // Clear cargo: deposit non-fuel items to storage to make room for trade goods
+    // Clear cargo: keep 3 fuel cells, deposit everything else to storage
+    const RESERVE_FUEL_CELLS = 3;
     await bot.refreshCargo();
     for (const item of bot.inventory) {
       const lower = item.itemId.toLowerCase();
-      if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
-      ctx.log("trade", `Depositing ${item.quantity}x ${item.name} to storage to free cargo...`);
-      await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      const isFuel = lower.includes("fuel") || lower.includes("energy_cell");
+      if (isFuel) {
+        // Keep up to RESERVE_FUEL_CELLS, deposit the rest
+        const excess = item.quantity - RESERVE_FUEL_CELLS;
+        if (excess > 0) {
+          ctx.log("trade", `Depositing ${excess}x ${item.name} (keeping ${RESERVE_FUEL_CELLS})...`);
+          await bot.exec("deposit_items", { item_id: item.itemId, quantity: excess });
+        }
+      } else {
+        ctx.log("trade", `Depositing ${item.quantity}x ${item.name} to free cargo...`);
+        await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      }
+    }
+
+    // Ensure we have at least RESERVE_FUEL_CELLS fuel cells (buy if needed)
+    await bot.refreshCargo();
+    let fuelInCargo = 0;
+    for (const item of bot.inventory) {
+      const lower = item.itemId.toLowerCase();
+      if (lower.includes("fuel") || lower.includes("energy_cell")) fuelInCargo += item.quantity;
+    }
+    if (fuelInCargo < RESERVE_FUEL_CELLS) {
+      const needed = RESERVE_FUEL_CELLS - fuelInCargo;
+      ctx.log("trade", `Buying ${needed} fuel cells for emergency reserve...`);
+      await bot.exec("buy", { item_id: "fuel_cell", quantity: needed });
     }
 
     // Determine how much we can buy (limited by cargo space and available credits)
