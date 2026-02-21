@@ -54,6 +54,18 @@ export function isMinablePoi(type: string): boolean {
     || t.includes("belt") || t.includes("resource");
 }
 
+/** Check if a POI is a gas cloud. */
+export function isGasCloudPoi(type: string): boolean {
+  const t = type.toLowerCase();
+  return t.includes("gas") || t.includes("cloud") || t.includes("nebula");
+}
+
+/** Check if a POI is an ice field. */
+export function isIceFieldPoi(type: string): boolean {
+  const t = type.toLowerCase();
+  return t.includes("ice") || t.includes("field");
+}
+
 /** Check if a POI type is purely scenic (only needs one visit). */
 export function isScenicPoi(type: string): boolean {
   const t = type.toLowerCase();
@@ -648,71 +660,7 @@ export async function ensureFueled(
 
   ctx.log("system", `Fuel low (${fuelPct}%) — need to refuel (threshold: ${thresholdPct}%)...`);
 
-  // Step 1: If undocked, clear cargo space and try to scavenge fuel cells
-  if (!bot.docked) {
-    // Jettison non-fuel items to make room for fuel cells
-    // Sort: highest quantity first (most common), then lowest value
-    const cargoResp = await bot.exec("get_cargo");
-    if (cargoResp.result && typeof cargoResp.result === "object") {
-      const cResult = cargoResp.result as Record<string, unknown>;
-      const cargoItems = (
-        Array.isArray(cResult) ? cResult :
-        Array.isArray(cResult.items) ? (cResult.items as Array<Record<string, unknown>>) :
-        Array.isArray(cResult.cargo) ? (cResult.cargo as Array<Record<string, unknown>>) :
-        []
-      ).filter((item: Record<string, unknown>) => {
-        const itemId = ((item.item_id as string) || "").toLowerCase();
-        return itemId && !itemId.includes("fuel") && !itemId.includes("energy_cell");
-      });
-
-      // Sort: lowest value first, then highest quantity (jettison cheap bulk first)
-      cargoItems.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
-        const aVal = (a.value as number) ?? (a.price as number) ?? (a.sell_price as number) ?? 0;
-        const bVal = (b.value as number) ?? (b.price as number) ?? (b.sell_price as number) ?? 0;
-        if (aVal !== bVal) return aVal - bVal; // lowest value first
-        const aQty = (a.quantity as number) || 0;
-        const bQty = (b.quantity as number) || 0;
-        return bQty - aQty; // highest quantity first
-      });
-
-      for (const item of cargoItems) {
-        const itemId = (item.item_id as string) || "";
-        const quantity = (item.quantity as number) || 0;
-        if (!itemId || quantity <= 0) continue;
-        const displayName = (item.name as string) || itemId;
-        ctx.log("system", `Jettisoning ${quantity}x ${displayName} to make room for fuel...`);
-        await bot.exec("jettison", { item_id: itemId, quantity });
-      }
-    }
-
-    // Scavenge nearby for fuel cells ONLY (not the stuff we just jettisoned)
-    const looted = await scavengeWrecks(ctx, { fuelOnly: true });
-    if (looted > 0) {
-      // Try refueling from cargo fuel cells
-      const refuelResp = await bot.exec("refuel");
-      if (!refuelResp.error) {
-        await bot.refreshStatus();
-        fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-        if (fuelPct >= thresholdPct) {
-          ctx.log("system", `Scavenged fuel cells — fuel now ${fuelPct}%`);
-          return true;
-        }
-      }
-    }
-
-    // Even without scavenging, try refuel in case we already had fuel cells
-    const refuelResp = await bot.exec("refuel");
-    if (!refuelResp.error) {
-      await bot.refreshStatus();
-      fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-      if (fuelPct >= thresholdPct) {
-        ctx.log("system", `Refueled from cargo — fuel now ${fuelPct}%`);
-        return true;
-      }
-    }
-  }
-
-  // Step 2: Try local station
+  // Step 1: Try local station first — dock and refuel with credits, no cargo loss
   const { pois } = await getSystemInfo(ctx);
   const localStation = findStation(pois);
 
@@ -724,7 +672,68 @@ export async function ensureFueled(
     return await emergencyFuelRecovery(ctx);
   }
 
-  // No local station — find nearest known system with one
+  // Step 2: No local station — try fuel cells already in cargo
+  if (!bot.docked) {
+    const refuelResp = await bot.exec("refuel");
+    if (!refuelResp.error) {
+      await bot.refreshStatus();
+      fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+      if (fuelPct >= thresholdPct) {
+        ctx.log("system", `Refueled from cargo — fuel now ${fuelPct}%`);
+        return true;
+      }
+    }
+
+    // Step 3: Nearly out of fuel — jettison cheap cargo + scavenge as last resort
+    if (bot.fuel <= 1) {
+      const cargoResp = await bot.exec("get_cargo");
+      if (cargoResp.result && typeof cargoResp.result === "object") {
+        const cResult = cargoResp.result as Record<string, unknown>;
+        const cargoItems = (
+          Array.isArray(cResult) ? cResult :
+          Array.isArray(cResult.items) ? (cResult.items as Array<Record<string, unknown>>) :
+          Array.isArray(cResult.cargo) ? (cResult.cargo as Array<Record<string, unknown>>) :
+          []
+        ).filter((item: Record<string, unknown>) => {
+          const itemId = ((item.item_id as string) || "").toLowerCase();
+          return itemId && !itemId.includes("fuel") && !itemId.includes("energy_cell");
+        });
+
+        cargoItems.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+          const aVal = (a.value as number) ?? (a.price as number) ?? (a.sell_price as number) ?? 0;
+          const bVal = (b.value as number) ?? (b.price as number) ?? (b.sell_price as number) ?? 0;
+          if (aVal !== bVal) return aVal - bVal;
+          const aQty = (a.quantity as number) || 0;
+          const bQty = (b.quantity as number) || 0;
+          return bQty - aQty;
+        });
+
+        for (const item of cargoItems) {
+          const itemId = (item.item_id as string) || "";
+          const quantity = (item.quantity as number) || 0;
+          if (!itemId || quantity <= 0) continue;
+          const displayName = (item.name as string) || itemId;
+          ctx.log("system", `Jettisoning ${quantity}x ${displayName} to make room for fuel...`);
+          await bot.exec("jettison", { item_id: itemId, quantity });
+        }
+      }
+
+      const looted = await scavengeWrecks(ctx, { fuelOnly: true });
+      if (looted > 0) {
+        const scavRefuel = await bot.exec("refuel");
+        if (!scavRefuel.error) {
+          await bot.refreshStatus();
+          fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+          if (fuelPct >= thresholdPct) {
+            ctx.log("system", `Scavenged fuel cells — fuel now ${fuelPct}%`);
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  // Step 4: No local station — find nearest known system with one
   ctx.log("system", "No station in current system — searching known map for nearest station...");
   const nearest = mapStore.findNearestStationSystem(bot.system);
   if (!nearest) {
@@ -953,8 +962,16 @@ export async function navigateToSystem(
       nextSystem = route[1];
       ctx.log("travel", `Route: ${route.length - 1} jump${route.length - 1 !== 1 ? "s" : ""} remaining`);
     } else {
-      ctx.log("travel", `No mapped route — attempting direct jump to ${targetSystemId}`);
-      nextSystem = targetSystemId;
+      ctx.log("travel", `No mapped route — querying server for route to ${targetSystemId}`);
+      const routeResp = await bot.exec("find_route", { target_system: targetSystemId });
+      const routeData = routeResp.result as { found?: boolean; route?: Array<{ system_id: string; name: string }>; total_jumps?: number } | null;
+      if (!routeResp.error && routeData?.found && routeData.route && routeData.route.length > 1) {
+        nextSystem = routeData.route[1].system_id;
+        ctx.log("travel", `Server route: ${routeData.total_jumps} jump${routeData.total_jumps !== 1 ? "s" : ""} — next: ${nextSystem}`);
+      } else {
+        ctx.log("error", `No route to ${targetSystemId} — cannot navigate`);
+        return false;
+      }
     }
 
     // Hull check — repair immediately if <= 40%
@@ -1280,10 +1297,40 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Log an entry to the faction activity log. Types: deposit, withdraw, donation, gift */
+export function logFactionActivity(ctx: RoutineContext, type: string, message: string): void {
+  const { bot } = ctx;
+  const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+  const line = `${timestamp} [${type}] ${bot.username}: ${message}`;
+  bot.onFactionLog?.(bot.username, line);
+}
+
 /** Log a status summary line. */
 export function logStatus(ctx: RoutineContext): void {
   const { bot } = ctx;
   const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : bot.fuel;
   const hullPct = bot.maxHull > 0 ? Math.round((bot.hull / bot.maxHull) * 100) : 100;
   ctx.log("info", `Credits: ${bot.credits} | Fuel: ${fuelPct}% | Hull: ${hullPct}% | Cargo: ${bot.cargo}/${bot.cargoMax} | System: ${bot.system} | Docked: ${bot.docked}`);
+}
+
+/** Minimum credits a bot must keep before donating to faction. */
+const FACTION_DONATE_FLOOR = 1000;
+/** Fraction of profit donated to faction treasury. */
+const FACTION_DONATE_PCT = 0.10;
+
+/**
+ * Donate 10% of the given profit to the faction treasury, as long as the bot
+ * will retain at least 1000 credits after the donation.
+ */
+export async function factionDonateProfit(ctx: RoutineContext, profit: number): Promise<void> {
+  if (profit <= 0) return;
+  const { bot } = ctx;
+  const donation = Math.floor(profit * FACTION_DONATE_PCT);
+  if (donation <= 0) return;
+  if (bot.credits - donation < FACTION_DONATE_FLOOR) return;
+  const resp = await bot.exec("faction_deposit_credits", { amount: donation });
+  if (!resp.error) {
+    ctx.log("trade", `Donated ${donation}cr to faction treasury (10% of ${profit}cr profit)`);
+    logFactionActivity(ctx, "donation", `Deposited ${donation}cr (10% of ${profit}cr profit)`);
+  }
 }

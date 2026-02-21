@@ -7,6 +7,7 @@ import {
   readSettings,
   scavengeWrecks,
   sleep,
+  logFactionActivity,
 } from "./common.js";
 
 // ── Settings ─────────────────────────────────────────────────
@@ -126,7 +127,7 @@ async function fetchAllRecipes(ctx: RoutineContext): Promise<Recipe[]> {
   return all;
 }
 
-/** Count how many of an item exist in cargo + storage. */
+/** Count how many of an item exist in cargo + storage + faction storage. */
 function countItem(ctx: RoutineContext, itemId: string): number {
   const { bot } = ctx;
   let total = 0;
@@ -136,18 +137,79 @@ function countItem(ctx: RoutineContext, itemId: string): number {
   for (const i of bot.storage) {
     if (i.itemId === itemId) total += i.quantity;
   }
+  for (const i of bot.factionStorage) {
+    if (i.itemId === itemId) total += i.quantity;
+  }
   return total;
 }
 
-/** Check if we have materials for a recipe. Returns missing item info or null if all present. */
+/** Count how many of an item exist in cargo only. */
+function countInCargo(ctx: RoutineContext, itemId: string): number {
+  let total = 0;
+  for (const i of ctx.bot.inventory) {
+    if (i.itemId === itemId) total += i.quantity;
+  }
+  return total;
+}
+
+/** Withdraw materials from station storage into cargo for a recipe. */
+async function withdrawStorageMaterials(ctx: RoutineContext, recipe: Recipe): Promise<void> {
+  const { bot } = ctx;
+  for (const comp of recipe.components) {
+    const inCargo = countInCargo(ctx, comp.item_id);
+    if (inCargo >= comp.quantity) continue;
+
+    const needed = comp.quantity - inCargo;
+    const inStorage = bot.storage.find(i => i.itemId === comp.item_id);
+    if (!inStorage || inStorage.quantity <= 0) continue;
+
+    const withdrawQty = Math.min(needed, inStorage.quantity);
+    const resp = await bot.exec("withdraw_items", { item_id: comp.item_id, quantity: withdrawQty });
+    if (!resp.error) {
+      ctx.log("craft", `Withdrew ${withdrawQty}x ${comp.name || comp.item_id} from station storage`);
+    }
+  }
+  await bot.refreshCargo();
+}
+
+/** Withdraw materials from faction storage into cargo for a recipe. */
+async function withdrawFactionMaterials(ctx: RoutineContext, recipe: Recipe): Promise<void> {
+  const { bot } = ctx;
+  for (const comp of recipe.components) {
+    const inCargo = countInCargo(ctx, comp.item_id);
+    if (inCargo >= comp.quantity) continue;
+
+    const needed = comp.quantity - inCargo;
+    const inFaction = bot.factionStorage.find(i => i.itemId === comp.item_id);
+    if (!inFaction || inFaction.quantity <= 0) continue;
+
+    const withdrawQty = Math.min(needed, inFaction.quantity);
+    const resp = await bot.exec("faction_withdraw_items", { item_id: comp.item_id, quantity: withdrawQty });
+    if (!resp.error) {
+      ctx.log("craft", `Withdrew ${withdrawQty}x ${comp.name || comp.item_id} from faction storage`);
+      logFactionActivity(ctx, "withdraw", `Withdrew ${withdrawQty}x ${comp.name || comp.item_id} from faction storage`);
+    }
+  }
+  await bot.refreshCargo();
+}
+
+/** Check if we have materials in cargo for a recipe. Returns missing item info or null if all present. */
 function getMissingMaterial(ctx: RoutineContext, recipe: Recipe): { name: string; need: number; have: number } | null {
   for (const comp of recipe.components) {
-    const have = countItem(ctx, comp.item_id);
+    const have = countInCargo(ctx, comp.item_id);
     if (have < comp.quantity) {
       return { name: comp.name || comp.item_id, need: comp.quantity, have };
     }
   }
   return null;
+}
+
+/** Check if materials exist anywhere (cargo + storage + faction). */
+function hasMaterialsAnywhere(ctx: RoutineContext, recipe: Recipe): boolean {
+  for (const comp of recipe.components) {
+    if (countItem(ctx, comp.item_id) < comp.quantity) return false;
+  }
+  return true;
 }
 
 // ── Crafter routine ──────────────────────────────────────────
@@ -195,9 +257,12 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
-    // ── Refresh inventory ──
+    // ── Refresh inventory (cargo + personal storage + faction storage) ──
     await bot.refreshCargo();
-    if (bot.docked) await bot.refreshStorage();
+    if (bot.docked) {
+      await bot.refreshStorage();
+      await bot.refreshFactionStorage();
+    }
 
     // ── Process each configured limit ──
     let totalCrafted = 0;
@@ -235,12 +300,26 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       let crafted = 0;
       while (crafted < needed && bot.state === "running") {
         await bot.refreshCargo();
-        if (bot.docked) await bot.refreshStorage();
+        if (bot.docked) {
+          await bot.refreshStorage();
+          await bot.refreshFactionStorage();
+        }
 
         const missing = getMissingMaterial(ctx, recipe);
         if (missing) {
-          missingSummary.push(`${recipe.name} (${missing.need}x ${missing.name})`);
-          break;
+          // Materials not in cargo — try pulling from storage sources
+          if (hasMaterialsAnywhere(ctx, recipe)) {
+            await withdrawStorageMaterials(ctx, recipe);
+            await withdrawFactionMaterials(ctx, recipe);
+            const stillMissing = getMissingMaterial(ctx, recipe);
+            if (stillMissing) {
+              missingSummary.push(`${recipe.name} (${stillMissing.need}x ${stillMissing.name})`);
+              break;
+            }
+          } else {
+            missingSummary.push(`${recipe.name} (${missing.need}x ${missing.name})`);
+            break;
+          }
         }
 
         const remaining = needed - crafted;
@@ -265,6 +344,7 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
         const actualCount = (result?.count as number) || (result?.quantity as number) || batchSize;
         crafted += actualCount;
         totalCrafted += actualCount;
+        bot.stats.totalCrafted += actualCount;
       }
 
       if (crafted > 0) {

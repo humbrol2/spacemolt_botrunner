@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { BotStatus } from "../bot.js";
 import { mapStore } from "../mapstore.js";
+import { catalogStore } from "../catalogstore.js";
 import type { ServerWebSocket } from "bun";
 
 // ── Types ──────────────────────────────────────────────────
@@ -40,12 +41,15 @@ type WSData = { id: number };
 
 const DATA_DIR = join(process.cwd(), "data");
 const SETTINGS_FILE = join(DATA_DIR, "settings.json");
+const STATS_FILE = join(DATA_DIR, "stats.json");
 
 function loadSettings(): RoutineSettings {
   if (existsSync(SETTINGS_FILE)) {
     try {
       return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8")) as RoutineSettings;
-    } catch { /* corrupt — start fresh */ }
+    } catch (err) {
+      console.warn(`Warning: corrupt settings.json, starting fresh —`, err);
+    }
   }
   return {};
 }
@@ -53,6 +57,53 @@ function loadSettings(): RoutineSettings {
 function saveSettings(s: RoutineSettings): void {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2) + "\n", "utf-8");
+}
+
+// ── Stats persistence ─────────────────────────────────────
+
+interface DayStats {
+  mined: number;
+  crafted: number;
+  trades: number;
+  profit: number;
+  systems: number;
+}
+
+interface StatsFile {
+  daily: Record<string, Record<string, DayStats>>;   // bot -> date -> stats
+  lastSeen: Record<string, DayStats>;                 // bot -> snapshot
+}
+
+function loadStats(): StatsFile {
+  if (existsSync(STATS_FILE)) {
+    try {
+      return JSON.parse(readFileSync(STATS_FILE, "utf-8")) as StatsFile;
+    } catch (err) {
+      console.warn(`Warning: corrupt stats.json, starting fresh —`, err);
+    }
+  }
+  return { daily: {}, lastSeen: {} };
+}
+
+function saveStats(s: StatsFile): void {
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(STATS_FILE, JSON.stringify(s, null, 2) + "\n", "utf-8");
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function pruneOldDates(daily: Record<string, Record<string, DayStats>>, maxAgeDays = 30): void {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - maxAgeDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  for (const bot of Object.keys(daily)) {
+    for (const date of Object.keys(daily[bot])) {
+      if (date < cutoffStr) delete daily[bot][date];
+    }
+    if (Object.keys(daily[bot]).length === 0) delete daily[bot];
+  }
 }
 
 // ── WebServer ──────────────────────────────────────────────
@@ -69,6 +120,7 @@ export class WebServer {
   private activityLog: string[] = [];
   private broadcastLog: string[] = [];
   private systemLog: string[] = [];
+  private factionLog: string[] = [];
 
   // Per-bot activity log buffers (username -> lines)
   private botLogs = new Map<string, string[]>();
@@ -79,6 +131,9 @@ export class WebServer {
   // Persisted routine settings
   settings: RoutineSettings;
 
+  // Persisted stats
+  private statsData: StatsFile;
+
   // Action callback — set by botmanager
   onAction: ((action: WebAction) => Promise<WebActionResult>) | null = null;
 
@@ -88,6 +143,7 @@ export class WebServer {
   constructor(port: number = 3000) {
     this.port = port;
     this.settings = loadSettings();
+    this.statsData = loadStats();
   }
 
   getSettings(routine: string): Record<string, unknown> {
@@ -97,6 +153,28 @@ export class WebServer {
   saveRoutineSettings(routine: string, s: Record<string, unknown>): void {
     this.settings[routine] = s;
     saveSettings(this.settings);
+  }
+
+  // ── Bot assignment persistence (auto-resume on restart) ───
+
+  saveBotAssignment(username: string, routine: string): void {
+    if (!this.settings.botAssignments) {
+      this.settings.botAssignments = {};
+    }
+    (this.settings.botAssignments as Record<string, string>)[username] = routine;
+    saveSettings(this.settings);
+  }
+
+  clearBotAssignment(username: string): void {
+    const assignments = this.settings.botAssignments as Record<string, string> | undefined;
+    if (assignments && username in assignments) {
+      delete assignments[username];
+      saveSettings(this.settings);
+    }
+  }
+
+  getBotAssignments(): Record<string, string> {
+    return (this.settings.botAssignments as Record<string, string>) || {};
   }
 
   start(): void {
@@ -127,6 +205,12 @@ export class WebServer {
         }
         if (url.pathname === "/api/settings") {
           return Response.json(this.settings);
+        }
+        if (url.pathname === "/api/stats") {
+          return Response.json(this.statsData.daily);
+        }
+        if (url.pathname === "/api/catalog") {
+          return Response.json(catalogStore.getAll());
         }
 
         // POST actions (fallback for non-WS clients)
@@ -170,11 +254,14 @@ export class WebServer {
             settings: this.settings,
             knownSystems,
             knownOres,
+            catalog: catalogStore.getAll(),
             mapData: mapStore.getAllSystems(),
+            statsDaily: this.statsData.daily,
             logs: {
               activity: this.activityLog,
               broadcast: this.broadcastLog,
               system: this.systemLog,
+              faction: this.factionLog,
             },
             botLogs: botLogsObj,
           }));
@@ -238,6 +325,11 @@ export class WebServer {
     this.broadcast({ type: "log", panel: "system", line });
   }
 
+  logFaction(line: string): void {
+    this.pushLog(this.factionLog, line);
+    this.broadcast({ type: "factionLog", line });
+  }
+
   logBot(username: string, line: string): void {
     if (!this.botLogs.has(username)) {
       this.botLogs.set(username, []);
@@ -253,6 +345,72 @@ export class WebServer {
       mapData: mapStore.getAllSystems(),
       knownOres: mapStore.getAllKnownOres(),
     });
+  }
+
+  // ── Stats flushing ──────────────────────────────────────────
+
+  flushBotStats(bots: BotStatus[]): void {
+    const today = todayStr();
+    let changed = false;
+
+    for (const bot of bots) {
+      if (!bot.stats) continue;
+      const name = bot.username;
+
+      const current: DayStats = {
+        mined: bot.stats.totalMined,
+        crafted: bot.stats.totalCrafted,
+        trades: bot.stats.totalTrades,
+        profit: bot.stats.totalProfit,
+        systems: bot.stats.totalSystems,
+      };
+
+      // Get last seen snapshot (default zeros)
+      const last = this.statsData.lastSeen[name] || { mined: 0, crafted: 0, trades: 0, profit: 0, systems: 0 };
+
+      // If bot restarted (stats went back to zero/lower), reset lastSeen
+      const botRestarted =
+        current.mined < last.mined ||
+        current.crafted < last.crafted ||
+        current.trades < last.trades ||
+        current.profit < last.profit ||
+        current.systems < last.systems;
+
+      const base = botRestarted ? { mined: 0, crafted: 0, trades: 0, profit: 0, systems: 0 } : last;
+
+      // Compute deltas
+      const dm = current.mined - base.mined;
+      const dc = current.crafted - base.crafted;
+      const dt = current.trades - base.trades;
+      const dp = current.profit - base.profit;
+      const ds = current.systems - base.systems;
+
+      // Always update lastSeen so restart detection works next cycle
+      this.statsData.lastSeen[name] = { ...current };
+
+      if (dm === 0 && dc === 0 && dt === 0 && dp === 0 && ds === 0) continue;
+
+      // Accumulate into daily
+      if (!this.statsData.daily[name]) this.statsData.daily[name] = {};
+      const day = this.statsData.daily[name][today] || { mined: 0, crafted: 0, trades: 0, profit: 0, systems: 0 };
+      day.mined += dm;
+      day.crafted += dc;
+      day.trades += dt;
+      day.profit += dp;
+      day.systems += ds;
+      this.statsData.daily[name][today] = day;
+      changed = true;
+    }
+
+    if (changed) {
+      pruneOldDates(this.statsData.daily);
+      saveStats(this.statsData);
+      this.broadcast({ type: "statsUpdate", statsDaily: this.statsData.daily });
+    }
+  }
+
+  getStatsData(): Record<string, Record<string, DayStats>> {
+    return this.statsData.daily;
   }
 
   // ── Internal helpers ───────────────────────────────────────

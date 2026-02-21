@@ -11,13 +11,14 @@ import {
   recordMarketData,
   getSystemInfo,
   findStation,
+  factionDonateProfit,
   readSettings,
   sleep,
 } from "./common.js";
 
 // ── Settings ─────────────────────────────────────────────────
 
-function getTraderSettings(): {
+function getTraderSettings(username?: string): {
   minProfitPerUnit: number;
   maxCargoValue: number;
   fuelCostPerJump: number;
@@ -25,17 +26,20 @@ function getTraderSettings(): {
   repairThreshold: number;
   homeSystem: string;
   tradeItems: string[];
+  autoInsure: boolean;
 } {
   const all = readSettings();
   const t = all.trader || {};
+  const botOverrides = username ? (all[username] || {}) : {};
   return {
     minProfitPerUnit: (t.minProfitPerUnit as number) || 10,
     maxCargoValue: (t.maxCargoValue as number) || 0,
     fuelCostPerJump: (t.fuelCostPerJump as number) || 50,
     refuelThreshold: (t.refuelThreshold as number) || 50,
     repairThreshold: (t.repairThreshold as number) || 40,
-    homeSystem: (t.homeSystem as string) || "",
+    homeSystem: (botOverrides.homeSystem as string) || (t.homeSystem as string) || "",
     tradeItems: Array.isArray(t.tradeItems) ? (t.tradeItems as string[]) : [],
+    autoInsure: (t.autoInsure as boolean) !== false,
   };
 }
 
@@ -124,6 +128,132 @@ function findTradeOpportunities(settings: ReturnType<typeof getTraderSettings>, 
   return routes;
 }
 
+// ── Market analysis ──────────────────────────────────────────
+
+/** Call analyze_market and log top insight. Builds trading XP. Must be docked. */
+async function analyzeMarket(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  const resp = await bot.exec("analyze_market", { mode: "overview" });
+  if (!resp.error && resp.result && typeof resp.result === "object") {
+    const r = resp.result as Record<string, unknown>;
+    const insights = r.top_insights as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(insights) && insights.length > 0) {
+      const top = insights[0];
+      ctx.log("trade", `Market intel: ${(top.message as string) ?? (top.category as string) ?? "no insights"}`);
+    }
+  }
+}
+
+// ── Insurance ────────────────────────────────────────────────
+
+/**
+ * Buy ship insurance if not already covered and cargo value justifies it.
+ * Should be called while docked at source, after loading trade goods.
+ */
+async function tryInsureShip(ctx: RoutineContext, cargoValue: number): Promise<void> {
+  const { bot } = ctx;
+
+  if (cargoValue <= 0) return;
+
+  // Check for existing active policies
+  const policiesResp = await bot.exec("policies");
+  if (!policiesResp.error && policiesResp.result) {
+    const pr = policiesResp.result as Record<string, unknown>;
+    const policies = Array.isArray(pr.policies) ? pr.policies : (Array.isArray(pr) ? pr : []);
+    if ((policies as unknown[]).length > 0) return;
+  }
+
+  // Get a quote
+  const quoteResp = await bot.exec("quote");
+  if (quoteResp.error || !quoteResp.result) return;
+
+  const qr = quoteResp.result as Record<string, unknown>;
+  const quoteObj = (qr.quote as Record<string, unknown>) ?? qr;
+  const premium = (quoteObj.premium as number) ?? 0;
+
+  // Only insure if we can comfortably afford it
+  if (!premium || premium > cargoValue * 0.1 || bot.credits < premium * 3) return;
+
+  const insureResp = await bot.exec("insure");
+  if (!insureResp.error) {
+    ctx.log("trade", `Insured ship for trade run (premium: ${premium}cr, cargo value: ~${cargoValue}cr)`);
+    await bot.refreshStatus();
+  }
+}
+
+// ── Missions ─────────────────────────────────────────────────
+
+/**
+ * Complete any active missions that are ready, then accept new market/trade
+ * missions at the current station (up to 2 per visit, respecting the 5-mission cap).
+ * Must be docked.
+ */
+async function tryMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  // Try to complete active missions
+  const activeResp = await bot.exec("get_active_missions");
+  let activeMissionCount = 0;
+  if (!activeResp.error && activeResp.result) {
+    const ar = activeResp.result as Record<string, unknown>;
+    const active = (
+      Array.isArray(ar.missions) ? ar.missions :
+      Array.isArray(ar) ? ar :
+      []
+    ) as Array<Record<string, unknown>>;
+    activeMissionCount = active.length;
+
+    for (const mission of active) {
+      const missionId = (mission.mission_id as string) || (mission.id as string) || "";
+      if (!missionId) continue;
+      const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+      if (!completeResp.error && completeResp.result) {
+        const cr = completeResp.result as Record<string, unknown>;
+        const earned = (cr.credits_earned as number) ?? 0;
+        ctx.log("trade", `Mission complete! +${earned}cr`);
+        activeMissionCount--;
+        await bot.refreshStatus();
+      }
+    }
+  }
+
+  // Accept new market/trade missions (cap at 5 total active)
+  if (activeMissionCount >= 5) return;
+
+  const availResp = await bot.exec("get_missions");
+  if (availResp.error || !availResp.result) return;
+
+  const vr = availResp.result as Record<string, unknown>;
+  const available = (
+    Array.isArray(vr.missions) ? vr.missions :
+    Array.isArray(vr) ? vr :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  let accepted = 0;
+  for (const mission of available) {
+    if (activeMissionCount + accepted >= 5 || accepted >= 2) break;
+
+    const missionId = (mission.mission_id as string) || (mission.id as string) || "";
+    const type = ((mission.type as string) || "").toLowerCase();
+    const title = ((mission.title as string) || "").toLowerCase();
+
+    const isTradeRelated =
+      type === "market_participation" || type === "trade" || type === "delivery" ||
+      title.includes("market") || title.includes("trade") ||
+      title.includes("sell") || title.includes("buy") || title.includes("deliver");
+
+    if (!isTradeRelated || !missionId) continue;
+
+    const acceptResp = await bot.exec("accept_mission", { mission_id: missionId });
+    if (!acceptResp.error) {
+      ctx.log("trade", `Accepted mission: ${(mission.title as string) || missionId}`);
+      accepted++;
+    }
+  }
+}
+
 // ── Trader routine ───────────────────────────────────────────
 
 /**
@@ -140,9 +270,10 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
   const { bot } = ctx;
 
   await bot.refreshStatus();
+  const startSystem = bot.system;
 
   while (bot.state === "running") {
-    const settings = getTraderSettings();
+    const settings = getTraderSettings(bot.username);
     const safetyOpts = {
       fuelThresholdPct: settings.refuelThreshold,
       hullThresholdPct: settings.repairThreshold,
@@ -153,6 +284,8 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     await ensureDocked(ctx);
     if (bot.docked) {
       await recordMarketData(ctx);
+      await analyzeMarket(ctx);
+      await tryMissions(ctx);
     }
 
     // ── Fuel + hull check ──
@@ -222,7 +355,8 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       }
       bot.docked = true;
 
-      // Withdraw only credits from storage (don't pull items — we need cargo space)
+      // Withdraw credits from storage and check for sellable items
+      await bot.refreshStorage();
       const storageResp = await bot.exec("view_storage");
       if (storageResp.result && typeof storageResp.result === "object") {
         const sr = storageResp.result as Record<string, unknown>;
@@ -233,8 +367,47 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
         }
       }
 
-      // Record fresh market data at source
+      // Check storage for items that can be sold at the destination for profit
+      if (bot.storage.length > 0) {
+        const destSys = mapStore.getSystem(candidate.destSystem);
+        const destStation = destSys?.pois.find(p => p.id === candidate.destPoi);
+        const destMarket = destStation?.market || [];
+
+        const storageToSell: Array<{ itemId: string; name: string; qty: number }> = [];
+        for (const item of bot.storage) {
+          const lower = item.itemId.toLowerCase();
+          if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+          // Check if destination has a buy price for this item
+          const destItem = destMarket.find(m => m.item_id === item.itemId);
+          if (destItem && destItem.best_sell !== null && destItem.best_sell > 0) {
+            storageToSell.push({ itemId: item.itemId, name: item.name, qty: item.quantity });
+          }
+        }
+
+        if (storageToSell.length > 0) {
+          await bot.refreshStatus();
+          const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
+          let withdrawn = 0;
+          const withdrawnItems: string[] = [];
+          for (const si of storageToSell) {
+            if (withdrawn >= freeSpace) break;
+            const qty = Math.min(si.qty, freeSpace - withdrawn);
+            if (qty <= 0) continue;
+            const wResp = await bot.exec("withdraw_items", { item_id: si.itemId, quantity: qty });
+            if (!wResp.error) {
+              withdrawn += qty;
+              withdrawnItems.push(`${qty}x ${si.name}`);
+            }
+          }
+          if (withdrawnItems.length > 0) {
+            ctx.log("trade", `Withdrew from storage to sell at dest: ${withdrawnItems.join(", ")}`);
+          }
+        }
+      }
+
+      // Record fresh market data at source and accept missions here too
       await recordMarketData(ctx);
+      await tryMissions(ctx);
 
       // Verify item is actually available via estimate_purchase
       yield "verify_availability";
@@ -310,6 +483,11 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       break;
     }
 
+    // Insure the loaded ship before departing (still docked at source)
+    if (route && buyQty > 0 && settings.autoInsure) {
+      await tryInsureShip(ctx, investedCredits);
+    }
+
     // No route worked — wait and retry
     if (!route || buyQty <= 0) {
       ctx.log("trade", "All routes failed — waiting 60s before re-scanning");
@@ -371,6 +549,7 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     }
     bot.docked = true;
     await collectFromStorage(ctx);
+    await tryMissions(ctx);
 
     // Sell items
     yield "sell";
@@ -387,15 +566,36 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       }
     }
 
+    // Also sell any other non-fuel items from cargo (e.g. items withdrawn from storage)
+    await bot.refreshCargo();
+    for (const item of bot.inventory) {
+      if (item.itemId === route.itemId) continue; // already sold above
+      const lower = item.itemId.toLowerCase();
+      if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+      if (item.quantity <= 0) continue;
+      const sResp = await bot.exec("sell", { item_id: item.itemId, quantity: item.quantity });
+      if (!sResp.error) {
+        ctx.log("trade", `Sold ${item.quantity}x ${item.name} from storage`);
+      } else {
+        // Can't sell here — deposit instead
+        await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      }
+    }
+
     await bot.refreshStatus();
     const creditsAfter = bot.credits;
     const actualProfit = creditsAfter - creditsBefore + investedCredits;
+    bot.stats.totalTrades++;
+    bot.stats.totalProfit += actualProfit;
 
     // Record market data at destination
     await recordMarketData(ctx);
 
     // ── Trade summary ──
     ctx.log("trade", `Trade run complete: ${buyQty}x ${route.itemName} — bought at ${route.sourcePoiName} (${route.buyPrice}cr/ea), sold at ${route.destPoiName} (${route.sellPrice}cr/ea) — profit ${actualProfit}cr (${route.jumps} jumps)`);
+
+    // ── Faction donation (10% of profit) ──
+    await factionDonateProfit(ctx, actualProfit);
 
     // ── Maintenance ──
     yield "post_trade_maintenance";
@@ -405,6 +605,34 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     // ── Check skills ──
     yield "check_skills";
     await bot.checkSkills();
+
+    // ── Return home ──
+    const homeSystem = settings.homeSystem || startSystem;
+    if (homeSystem && bot.system !== homeSystem) {
+      yield "return_home";
+      ctx.log("travel", `Returning to home system ${homeSystem}...`);
+      const homeFueled = await ensureFueled(ctx, safetyOpts.fuelThresholdPct);
+      if (!homeFueled) {
+        ctx.log("error", "Cannot refuel for return home — will try next cycle");
+      } else {
+        await ensureUndocked(ctx);
+        const arrived = await navigateToSystem(ctx, homeSystem, safetyOpts);
+        if (arrived) {
+          // Dock at home station
+          const { pois: homePois } = await getSystemInfo(ctx);
+          const homeStation = findStation(homePois);
+          if (homeStation) {
+            await bot.exec("travel", { target_poi: homeStation.id });
+            await bot.exec("dock");
+            bot.docked = true;
+            bot.poi = homeStation.id;
+            ctx.log("travel", `Docked at home station ${homeStation.name}`);
+          }
+        } else {
+          ctx.log("error", "Failed to return home — will retry next cycle");
+        }
+      }
+    }
 
     await bot.refreshStatus();
     const endFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;

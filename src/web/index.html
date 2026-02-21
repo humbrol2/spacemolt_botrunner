@@ -30,10 +30,10 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   /* ── Header ─────────────────────────────────────── */
@@ -96,7 +96,7 @@
 
   /* ── Main layout ────────────────────────────────── */
   main {
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -113,6 +113,7 @@
   .tab-page.active {
     display: flex;
   }
+  #page-dashboard { flex: 1 0 auto; overflow: visible; }
 
   /* ── Bot table ──────────────────────────────────── */
   .bot-table-wrap {
@@ -120,10 +121,9 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     flex: 0 0 auto;
-    max-height: 220px;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible;
   }
   .bot-table-header {
     display: flex;
@@ -143,9 +143,6 @@
   .bot-table-scroll {
     flex: 1;
     min-height: 0;
-    overflow-y: scroll;
-    scrollbar-width: thin;
-    scrollbar-color: #484f58 #21262d;
   }
   table.bot-table {
     width: 100%;
@@ -218,6 +215,80 @@
     padding: 16px 10px;
   }
 
+  /* ── Stats bar ──────────────────────────────────── */
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .stats-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 8px;
+    align-self: center;
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+  }
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1.2;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Stats tab toggle ──────────────────────────── */
+  .stats-toggle {
+    display: inline-flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .stats-toggle button {
+    border: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .stats-toggle button:last-child { border-right: none; }
+  .stats-toggle button:hover { color: var(--text); background: var(--bg-row-hover); }
+  .stats-toggle button.active { color: var(--text-bright); background: var(--accent); }
+
+  .stats-page-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .stats-page-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin: 0;
+  }
+
   /* ── Buttons ────────────────────────────────────── */
   button {
     background: var(--bg-input);
@@ -238,7 +309,8 @@
 
   /* ── Log panels ─────────────────────────────────── */
   .log-area {
-    flex: 1;
+    height: 500px;
+    flex-shrink: 0;
     display: grid;
     grid-template-columns: 2fr 1fr;
     grid-template-rows: 3fr 1fr;
@@ -266,7 +338,8 @@
   }
   .log-panel .log-content {
     flex: 1;
-    overflow-y: scroll;
+    height: 0;
+    overflow-y: auto;
     padding: 8px 12px;
     font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
     font-size: 12px;
@@ -276,6 +349,10 @@
     scrollbar-width: thin;
     scrollbar-color: #484f58 #21262d;
   }
+  .log-panel .log-content::-webkit-scrollbar { width: 10px; }
+  .log-panel .log-content::-webkit-scrollbar-track { background: #21262d; }
+  .log-panel .log-content::-webkit-scrollbar-thumb { background: #484f58; border-radius: 5px; }
+  .log-panel .log-content::-webkit-scrollbar-thumb:hover { background: #6e7681; }
   .system-panel { grid-column: 1 / -1; }
 
   /* Log line colors */
@@ -628,6 +705,7 @@
   .log-entry .log-cat-mining { color: #f0883e; }
   .log-entry .log-cat-trade { color: #3fb950; }
   .log-entry .log-cat-rescue { color: #f778ba; }
+  .log-entry .log-cat-combat { color: #f85149; }
   .log-entry .log-cat-info { color: #8b949e; }
   .log-entry .log-msg { color: var(--text); }
   .exec-cooldown { opacity: 0.5; pointer-events: none; }
@@ -1421,6 +1499,42 @@
     padding: 1px 6px;
     border-radius: 8px;
   }
+  .faction-log-filters {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .faction-log-filter-btn {
+    display: inline-block;
+    width: auto;
+    padding: 4px 10px;
+    font-size: 11px;
+    background: var(--bg);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .faction-log-filter-btn:hover { background: #21262d; color: var(--text); }
+  .faction-log-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .faction-log-content {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    scrollbar-width: thin;
+    scrollbar-color: #484f58 #21262d;
+  }
+  .faction-log-content::-webkit-scrollbar { width: 10px; }
+  .faction-log-content::-webkit-scrollbar-track { background: #21262d; }
+  .faction-log-content::-webkit-scrollbar-thumb { background: #484f58; border-radius: 5px; }
+  .faction-log-content::-webkit-scrollbar-thumb:hover { background: #6e7681; }
   .faction-card {
     background: var(--bg);
     border: 1px solid #21262d;
@@ -1647,6 +1761,7 @@
       <div class="top-tab" data-tab="missions" onclick="switchTab('missions')">Missions</div>
       <div class="top-tab" data-tab="faction" onclick="switchTab('faction')">Faction</div>
       <div class="top-tab" data-tab="shipyard" onclick="switchTab('shipyard')">Shipyard</div>
+      <div class="top-tab" data-tab="stats" onclick="switchTab('stats')">Stats</div>
       <div class="top-tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
     </div>
   </div>
@@ -1661,6 +1776,18 @@
 <main>
   <!-- ══ Dashboard Tab ══ -->
   <div class="tab-page active" id="page-dashboard">
+    <div class="stats-bar" id="statsBar">
+      <span class="stats-title">Fleet Stats</span>
+      <div class="stat-item"><span class="stat-value" id="statActive">0</span><span class="stat-label">Active Bots</span></div>
+      <div class="stat-item"><span class="stat-value" id="statCredits">0</span><span class="stat-label">Fleet Credits</span></div>
+      <div class="stat-item"><span class="stat-value" id="statFaction">-</span><span class="stat-label">Faction Funds</span></div>
+      <div class="stat-item"><span class="stat-value" id="statProfit">0</span><span class="stat-label">Total Trade Profit</span></div>
+      <div class="stat-item"><span class="stat-value" id="statTrades">0</span><span class="stat-label">Trades</span></div>
+      <div class="stat-item"><span class="stat-value" id="statAvgProfit">0</span><span class="stat-label">Avg Profit/Trade</span></div>
+      <div class="stat-item"><span class="stat-value" id="statMined">0</span><span class="stat-label">Ores Mined</span></div>
+      <div class="stat-item"><span class="stat-value" id="statCrafted">0</span><span class="stat-label">Items Crafted</span></div>
+      <div class="stat-item"><span class="stat-value" id="statSystems">0</span><span class="stat-label">Explored</span></div>
+    </div>
     <div class="bot-table-wrap">
       <div class="bot-table-header">
         <span>Bots</span>
@@ -1726,6 +1853,9 @@
         <div class="sidebar-item" onclick="switchSettingsTab('explorer')">Explorer</div>
         <div class="sidebar-item" onclick="switchSettingsTab('coordinator')">Coordinator</div>
         <div class="sidebar-item" onclick="switchSettingsTab('trader')">Trader</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('gas_harvester')">GasHarvester</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('ice_harvester')">IceHarvester</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('salvager')">Salvager</div>
       </div>
       <div class="settings-panel" id="settingsContent">
         <!-- filled by JS -->
@@ -1840,6 +1970,58 @@
     </div>
   </div>
 
+  <!-- ══ Stats Tab ══ -->
+  <div class="tab-page" id="page-stats">
+    <div class="stats-page-header">
+      <h3>Fleet Statistics</h3>
+      <div class="stats-toggle" id="statsToggle">
+        <button class="active" onclick="setStatsPeriod('today')">Today</button>
+        <button onclick="setStatsPeriod('week')">Week</button>
+        <button onclick="setStatsPeriod('all')">All Time</button>
+      </div>
+    </div>
+    <div class="stats-bar" id="statsBarPersist">
+      <span class="stats-title">Totals</span>
+      <div class="stat-item"><span class="stat-value" id="pStatMined">0</span><span class="stat-label">Ores Mined</span></div>
+      <div class="stat-item"><span class="stat-value" id="pStatCrafted">0</span><span class="stat-label">Items Crafted</span></div>
+      <div class="stat-item"><span class="stat-value" id="pStatTrades">0</span><span class="stat-label">Trades</span></div>
+      <div class="stat-item"><span class="stat-value" id="pStatProfit">0</span><span class="stat-label">Trade Profit</span></div>
+      <div class="stat-item"><span class="stat-value" id="pStatSystems">0</span><span class="stat-label">Explored</span></div>
+      <div class="stat-item"><span class="stat-value" id="pStatFaction">-</span><span class="stat-label">Faction Funds</span></div>
+    </div>
+    <div style="display:flex;gap:16px;flex:1;min-height:0;overflow:hidden">
+      <div class="bot-table-wrap" style="flex:1;overflow:auto">
+        <div class="bot-table-header"><span>Per-Bot Breakdown</span></div>
+        <div class="bot-table-scroll">
+          <table class="bot-table" id="statsTable">
+            <thead><tr>
+              <th style="text-align:left;padding:6px 12px">Bot</th>
+              <th style="text-align:right;padding:6px 12px">Mined</th>
+              <th style="text-align:right;padding:6px 12px">Crafted</th>
+              <th style="text-align:right;padding:6px 12px">Trades</th>
+              <th style="text-align:right;padding:6px 12px">Profit</th>
+              <th style="text-align:right;padding:6px 12px">Systems</th>
+            </tr></thead>
+            <tbody id="statsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="bot-table-wrap" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+        <div class="bot-table-header">
+          <span>Faction Activity</span>
+          <div class="faction-log-filters" id="statsLogFilters">
+            <button class="faction-log-filter-btn active" onclick="setStatsLogFilter('all')">All</button>
+            <button class="faction-log-filter-btn" onclick="setStatsLogFilter('deposit')">Deposit</button>
+            <button class="faction-log-filter-btn" onclick="setStatsLogFilter('withdraw')">Withdraw</button>
+            <button class="faction-log-filter-btn" onclick="setStatsLogFilter('donation')">Donation</button>
+            <button class="faction-log-filter-btn" onclick="setStatsLogFilter('gift')">Gift</button>
+          </div>
+        </div>
+        <div id="statsActivityLog" class="faction-log-content" style="flex:1;min-height:0"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ Bot Profile Page (hidden by default) ══ -->
   <div class="profile-page" id="page-profile">
     <div class="profile-topbar">
@@ -1924,6 +2106,9 @@ let profileMarket = null;     // cached market items from view_market (sorted by
 let profileSkills = {};       // cached skills { skill_id: level }
 let profileSkillsList = null;  // full skill objects for display (null = not fetched)
 let mapData = {};             // systems from mapStore
+let statsDaily = {};          // persisted stats: { botName: { "2026-02-20": {...} } }
+let catalog = { items: {}, ships: {}, skills: {}, recipes: {}, lastFetched: null };
+let statsPeriod = 'today';    // 'today' | 'week' | 'all'
 let activeOreFilters = new Set(); // selected ore item_ids to filter by
 
 /** Resolve a system ID + optional POI ID to display names using mapData. */
@@ -1935,6 +2120,13 @@ function resolveLocation(systemId, poiId) {
   const poi = (sys?.pois || []).find(p => p.id === poiId);
   const poiName = poi?.name || poiId;
   return `${sysName} - ${poiName}`;
+}
+
+/** Look up a human-readable name from catalog for any ID (item, ship, skill, recipe). */
+function catalogName(id) {
+  return catalog.items[id]?.name || catalog.ships[id]?.name
+    || catalog.skills[id]?.name || catalog.recipes[id]?.name
+    || id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 const activityEl = document.getElementById('activityLog');
@@ -1967,6 +2159,7 @@ function switchTab(name) {
   if (name === 'missions') renderMissionsPage();
   if (name === 'faction') renderFactionPage();
   if (name === 'shipyard') renderShipyardPage();
+  if (name === 'stats') { renderStatsTab(); refreshFactionFunds(); }
 }
 
 // ── WebSocket ──────────────────────────────────────────────
@@ -1990,7 +2183,8 @@ function connect() {
   ws.onerror = () => {};
 
   ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
     switch (msg.type) {
       case 'init':
         bots = msg.bots || [];
@@ -1998,8 +2192,12 @@ function connect() {
         settings = msg.settings || {};
         knownSystems = msg.knownSystems || [];
         knownOres = msg.knownOres || [];
+        if (msg.catalog) catalog = msg.catalog;
         mapData = msg.mapData || {};
+        statsDaily = msg.statsDaily || {};
         renderBots();
+        renderStats();
+        setTimeout(refreshFactionFunds, 2000);
         updateChatBotSelect();
         renderSettingsPanel();
         if (msg.logs) {
@@ -2012,13 +2210,18 @@ function connect() {
           botLogBuffers = msg.botLogs;
           if (profileBot) renderBotActivityLog();
         }
+        // Load faction log
+        factionLogLines = msg.logs?.faction || [];
         break;
       case 'status':
         bots = msg.bots || [];
         renderBots();
+        renderStats();
         updateChatBotSelect();
         // Update profile if open
         if (profileBot) renderProfileSidebar();
+        // Update stats tab bot list if visible
+        if (document.getElementById('page-stats')?.classList.contains('active')) renderStatsTab();
         break;
       case 'log':
         appendLine(msg.panel, msg.line);
@@ -2044,6 +2247,15 @@ function connect() {
           if (profileBot === msg.username) appendBotLogLine(msg.line);
         }
         break;
+      case 'factionLog':
+        factionLogLines.push(msg.line);
+        if (factionLogLines.length > 200) factionLogLines.shift();
+        if (factionActivePanel === 'activity') appendFactionLogLine(msg.line);
+        // Also update stats tab activity log if visible
+        if (document.getElementById('page-stats')?.classList.contains('active')) {
+          renderStatsActivityLog();
+        }
+        break;
       case 'execResult':
         handleExecResult(msg);
         break;
@@ -2061,6 +2273,12 @@ function connect() {
         // Re-render missions tab if it's active
         if (document.getElementById('page-missions')?.classList.contains('active')) {
           renderMissionsFromMap();
+        }
+        break;
+      case 'statsUpdate':
+        statsDaily = msg.statsDaily || {};
+        if (document.getElementById('page-stats')?.classList.contains('active')) {
+          renderStatsTab();
         }
         break;
     }
@@ -2104,6 +2322,161 @@ function renderBots() {
       <td><div class="row-actions">${actions}</div></td>
     </tr>`;
   }).join('');
+}
+
+// ── Fleet Stats ────────────────────────────────────────────
+// ── Stats Tab (persistent) ──────────────────────────────────
+function setStatsPeriod(period) {
+  statsPeriod = period;
+  document.querySelectorAll('#statsToggle button').forEach(b => b.classList.remove('active'));
+  const labels = { today: 'Today', week: 'Week', all: 'All Time' };
+  document.querySelectorAll('#statsToggle button').forEach(b => {
+    if (b.textContent === labels[period]) b.classList.add('active');
+  });
+  renderStatsTab();
+}
+
+function aggregateStats(botDaily, days) {
+  const totals = { mined: 0, crafted: 0, trades: 0, profit: 0, systems: 0 };
+  if (!botDaily) return totals;
+  let cutoff = null;
+  if (days > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() - (days - 1));
+    cutoff = d.toISOString().slice(0, 10);
+  }
+  for (const [date, s] of Object.entries(botDaily)) {
+    if (cutoff && date < cutoff) continue;
+    totals.mined += s.mined || 0;
+    totals.crafted += s.crafted || 0;
+    totals.trades += s.trades || 0;
+    totals.profit += s.profit || 0;
+    totals.systems += s.systems || 0;
+  }
+  return totals;
+}
+
+function renderStatsTab() {
+  const days = statsPeriod === 'today' ? 1 : statsPeriod === 'week' ? 7 : 0;
+
+  // Merge all known bot names: from persisted stats + live bots array
+  const nameSet = new Set(Object.keys(statsDaily));
+  for (const b of bots) nameSet.add(b.username);
+  const botNames = [...nameSet].sort();
+
+  // Fleet totals
+  let tMined = 0, tCrafted = 0, tTrades = 0, tProfit = 0, tSystems = 0;
+  const rows = [];
+  for (const name of botNames) {
+    const agg = aggregateStats(statsDaily[name], days);
+    tMined += agg.mined;
+    tCrafted += agg.crafted;
+    tTrades += agg.trades;
+    tProfit += agg.profit;
+    tSystems += agg.systems;
+    rows.push({ name, ...agg });
+  }
+
+  document.getElementById('pStatMined').textContent = num(tMined);
+  document.getElementById('pStatCrafted').textContent = num(tCrafted);
+  document.getElementById('pStatTrades').textContent = num(tTrades);
+  document.getElementById('pStatProfit').textContent = num(tProfit) + 'cr';
+  document.getElementById('pStatSystems').textContent = num(tSystems);
+
+  // Faction funds
+  const treasury = factionData ? (factionData.treasury ?? factionData.credits ?? null) : null;
+  document.getElementById('pStatFaction').textContent = treasury != null ? num(treasury) + 'cr' : '-';
+
+  const tbody = document.getElementById('statsTableBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-dim)">No stats recorded yet. Stats are saved every 60 seconds while bots are running.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td style="padding:6px 12px;font-weight:500;color:var(--text-bright)">${esc(r.name)}</td>
+      <td style="padding:6px 12px;text-align:right">${num(r.mined)}</td>
+      <td style="padding:6px 12px;text-align:right">${num(r.crafted)}</td>
+      <td style="padding:6px 12px;text-align:right">${num(r.trades)}</td>
+      <td style="padding:6px 12px;text-align:right">${num(r.profit)}cr</td>
+      <td style="padding:6px 12px;text-align:right">${num(r.systems)}</td>
+    </tr>`).join('');
+  }
+
+  // Faction activity log
+  renderStatsActivityLog();
+}
+
+let statsLogFilter = 'all';
+
+function setStatsLogFilter(filter) {
+  statsLogFilter = filter;
+  document.querySelectorAll('#statsLogFilters .faction-log-filter-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#statsLogFilters .faction-log-filter-btn').forEach(b => {
+    if (b.textContent.toLowerCase() === filter) b.classList.add('active');
+  });
+  renderStatsActivityLog();
+}
+
+function renderStatsActivityLog() {
+  const log = document.getElementById('statsActivityLog');
+  if (!log) return;
+  const filtered = statsLogFilter === 'all'
+    ? factionLogLines
+    : factionLogLines.filter(l => l.includes(`[${statsLogFilter}]`));
+  if (filtered.length === 0) {
+    log.innerHTML = '<span style="color:var(--text-dim);padding:12px;display:block">No faction activity logged yet.</span>';
+    return;
+  }
+  log.innerHTML = filtered.map(l => `<div class="log-entry">${formatFactionLogLine(l)}</div>`).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderStats() {
+  let mined = 0, crafted = 0, trades = 0, profit = 0, credits = 0, systems = 0, active = 0;
+  for (const b of bots) {
+    if (b.stats) {
+      mined += b.stats.totalMined;
+      crafted += b.stats.totalCrafted;
+      trades += b.stats.totalTrades;
+      profit += b.stats.totalProfit;
+      systems += b.stats.totalSystems;
+    }
+    credits += b.credits || 0;
+    if (b.state === 'running') active++;
+  }
+  document.getElementById('statMined').textContent = num(mined);
+  document.getElementById('statCrafted').textContent = num(crafted);
+  document.getElementById('statTrades').textContent = num(trades);
+  document.getElementById('statProfit').textContent = num(profit) + 'cr';
+  document.getElementById('statAvgProfit').textContent = (trades > 0 ? num(Math.round(profit / trades)) : '0') + 'cr';
+  document.getElementById('statCredits').textContent = num(credits) + 'cr';
+  document.getElementById('statSystems').textContent = num(systems);
+  document.getElementById('statActive').textContent = active;
+  // Faction funds from cached factionData
+  const treasury = factionData ? (factionData.treasury ?? factionData.credits ?? null) : null;
+  document.getElementById('statFaction').textContent = treasury != null ? num(treasury) : '-';
+}
+
+let _factionFundsInFlight = false;
+/** Fetch faction treasury in the background for the stats bar. */
+function refreshFactionFunds() {
+  if (_factionFundsInFlight) return;
+  // Prefer a running bot (more likely to have an active session)
+  const running = bots.filter(b => b.state === 'running');
+  const pick = running.length > 0 ? running[0] : bots[0];
+  if (!pick) return;
+
+  _factionFundsInFlight = true;
+  sendExec(pick.username, 'faction_info', undefined, (result) => {
+    _factionFundsInFlight = false;
+    if (result.ok && result.data) {
+      factionData = result.data;
+      const treasury = factionData.treasury ?? factionData.credits ?? null;
+      const label = treasury != null ? num(treasury) + 'cr' : '-';
+      document.getElementById('statFaction').textContent = label;
+      const pEl = document.getElementById('pStatFaction');
+      if (pEl) pEl.textContent = label;
+    }
+  });
 }
 
 // ── Bot Profile ────────────────────────────────────────────
@@ -3119,16 +3492,18 @@ function mcExecCustom() {
 let execCallbacks = {};
 let execSeq = 0;
 
+const execTimers = {};  // seq -> timeout ID for cleanup
 function sendExec(botName, command, params, callback) {
   const seq = ++execSeq;
   if (callback) {
     execCallbacks[seq] = callback;
     // Safety timeout — fire callback with error if server never responds
-    setTimeout(() => {
+    execTimers[seq] = setTimeout(() => {
       if (execCallbacks[seq]) {
         execCallbacks[seq]({ ok: false, error: `Timeout: ${command} did not respond` });
         delete execCallbacks[seq];
       }
+      delete execTimers[seq];
     }, 30000);
   }
   const msg = { type: 'exec', bot: botName, command, params, _seq: seq };
@@ -3136,6 +3511,8 @@ function sendExec(botName, command, params, callback) {
     ws.send(JSON.stringify(msg));
   } else if (callback) {
     // WebSocket not connected — fire error immediately
+    clearTimeout(execTimers[seq]);
+    delete execTimers[seq];
     delete execCallbacks[seq];
     callback({ ok: false, error: 'Not connected to server' });
   }
@@ -3144,6 +3521,8 @@ function sendExec(botName, command, params, callback) {
 function handleExecResult(msg) {
   // Try to match callback
   if (msg._seq && execCallbacks[msg._seq]) {
+    clearTimeout(execTimers[msg._seq]);
+    delete execTimers[msg._seq];
     execCallbacks[msg._seq](msg);
     delete execCallbacks[msg._seq];
   }
@@ -3172,7 +3551,7 @@ let botLogBuffers = {};
 const LOG_CAT_CLASSES = {
   system: 'log-cat-system', error: 'log-cat-error', travel: 'log-cat-travel',
   mining: 'log-cat-mining', trade: 'log-cat-trade', rescue: 'log-cat-rescue',
-  info: 'log-cat-info',
+  combat: 'log-cat-combat', info: 'log-cat-info',
 };
 
 function formatBotLogLine(line) {
@@ -3212,18 +3591,20 @@ function renderBotActivityLog() {
 // Fetch system POIs and connections for travel dropdowns
 function fetchSystemData(username) {
   sendExec(username, 'get_system', undefined, (result) => {
+    if (profileBot !== username) return; // stale response — user switched bots
     if (!result.ok || !result.data) return;
     const d = result.data;
     const sysObj = d.system || d;
     const pois = sysObj.pois || d.pois || [];
     const connections = sysObj.connections || sysObj.jump_gates || d.connections || [];
     profileSystemData = { pois, connections };
-    if (profileBot === username) renderManualControls();
+    renderManualControls();
   });
 }
 
 function fetchMarket(username) {
   sendExec(username, 'view_market', undefined, (result) => {
+    if (profileBot !== username) return; // stale response
     if (!result.ok || !result.data) { profileMarket = []; return; }
     const d = result.data;
     const items = Array.isArray(d) ? d : (d.items || d.market || d.listings || []);
@@ -3237,16 +3618,17 @@ function fetchMarket(username) {
       }))
       .filter(i => i.item_id && i.buy_price != null)
       .sort((a, b) => (a.buy_price || 0) - (b.buy_price || 0));
-    if (profileBot === username) renderManualControls();
+    renderManualControls();
   });
 }
 
 function fetchSkills(username) {
   sendExec(username, 'get_skills', undefined, (result) => {
+    if (profileBot !== username) return; // stale response
     if (!result.ok || !result.data) {
       profileSkillsList = [];
       profileSkills = {};
-      if (profileBot === username) renderProfileSidebar();
+      renderProfileSidebar();
       return;
     }
     const d = result.data;
@@ -3274,10 +3656,8 @@ function fetchSkills(username) {
       if (id) profileSkills[id] = s.level || 0;
       if (s.name && s.name !== id) profileSkills[s.name] = s.level || 0;
     }
-    if (profileBot === username) {
-      renderProfileSidebar();
-      renderManualControls();
-    }
+    renderProfileSidebar();
+    renderManualControls();
   });
 }
 
@@ -3288,9 +3668,10 @@ function fetchRecipes(username) {
 
 function fetchRecipesPage(username, page) {
   sendExec(username, 'catalog', { type: 'recipes', page, page_size: 50 }, (result) => {
+    if (profileBot !== username) return; // stale response
     if (!result.ok && !result.data) {
       logResponse(`<span class="resp-cmd">catalog recipes</span> <span class="resp-err">${esc(result.error || 'failed')}</span>`);
-      if (profileBot === username) renderManualControls();
+      renderManualControls();
       return;
     }
     const d = result.data || {};
@@ -3303,7 +3684,7 @@ function fetchRecipesPage(username, page) {
       return;
     }
     logResponse(`<span class="resp-cmd">catalog recipes</span> <span class="resp-ok">Found ${profileRecipes.length} recipes</span>`);
-    if (profileBot === username) renderManualControls();
+    renderManualControls();
   });
 }
 
@@ -4108,6 +4489,12 @@ function renderSettingsPanel() {
     renderCoordinatorSettings(panel);
   } else if (activeSettingsTab === 'trader') {
     renderTraderSettings(panel);
+  } else if (activeSettingsTab === 'gas_harvester') {
+    renderGasHarvesterSettings(panel);
+  } else if (activeSettingsTab === 'ice_harvester') {
+    renderIceHarvesterSettings(panel);
+  } else if (activeSettingsTab === 'salvager') {
+    renderSalvagerSettings(panel);
   }
 }
 
@@ -4291,12 +4678,17 @@ function renderCrafterSettings(panel) {
   const refuelThreshold = crafter.refuelThreshold ?? 50;
   const repairThreshold = crafter.repairThreshold ?? 40;
 
-  // If we don't have recipes yet, fetch from first available bot
-  if (!cachedSettingsRecipes && bots.length > 0) {
-    panel.innerHTML = '<h3>Crafter Settings</h3><div class="settings-desc">Loading recipes...</div>';
-    cachedSettingsRecipes = [];
-    fetchSettingsRecipesPage(bots[0].username, 1, panel);
-    return;
+  // Use catalog recipes if available, fall back to API fetch
+  if (!cachedSettingsRecipes) {
+    const catalogRecipes = Object.values(catalog.recipes || {});
+    if (catalogRecipes.length > 0) {
+      cachedSettingsRecipes = catalogRecipes;
+    } else if (bots.length > 0) {
+      panel.innerHTML = '<h3>Crafter Settings</h3><div class="settings-desc">Loading recipes...</div>';
+      cachedSettingsRecipes = [];
+      fetchSettingsRecipesPage(bots[0].username, 1, panel);
+      return;
+    }
   }
 
   const recipes = cachedSettingsRecipes || [];
@@ -4738,7 +5130,8 @@ function appendLine(panel, line) {
 function makeLogLine(text) {
   const div = document.createElement('div');
   div.className = 'log-line';
-  const m = text.match(/\[(\w+)\]/);
+  // Format: "HH:MM:SS [username] [category] msg" — capture the second bracket (category)
+  const m = text.match(/\[\w+\]\s*\[(\w+)\]/);
   if (m) div.classList.add(`cat-${m[1].toLowerCase()}`);
   div.textContent = text;
   return div;
@@ -4834,7 +5227,9 @@ let missionsSelectedBot = null;
 let activeMissionsCache = {};
 let factionSelectedBot = null;
 let factionData = null; // cached faction_info result
-let factionActivePanel = 'overview'; // overview | members | storage | facilities | diplomacy | intel | rooms | missions
+let factionActivePanel = 'overview'; // overview | members | storage | facilities | diplomacy | intel | rooms | missions | activity
+let factionLogLines = [];       // all faction log entries
+let factionLogFilter = 'all';   // 'all' | 'deposit' | 'withdraw' | 'donation' | 'gift'
 
 function renderMissionsPage() {
   renderMissionsSidebar();
@@ -5212,7 +5607,7 @@ function renderFactionContent(username) {
   const leader = f.leader || f.owner || '';
 
   // Panel navigation tabs
-  const panels = ['overview', 'members', 'storage', 'facilities', 'rooms', 'missions', 'diplomacy', 'intel'];
+  const panels = ['overview', 'members', 'storage', 'facilities', 'rooms', 'missions', 'diplomacy', 'intel', 'activity'];
   const panelNav = panels.map(p => {
     const active = factionActivePanel === p ? ' active' : '';
     const label = p.charAt(0).toUpperCase() + p.slice(1);
@@ -5244,6 +5639,9 @@ function renderFactionContent(username) {
       break;
     case 'intel':
       panelHtml = renderFactionIntel(f, username);
+      break;
+    case 'activity':
+      panelHtml = renderFactionActivity(f, username);
       break;
   }
 
@@ -5472,6 +5870,57 @@ function renderFactionIntel(f, username) {
       <div id="factionTradeIntel"><button class="sm" onclick="fetchFactionTradeIntel('${esc(username)}')">Load Trade Intel</button></div>
     </div>
   `;
+}
+
+// ── Faction Activity Log ─────────────────────────────────────
+
+function renderFactionActivity(f, username) {
+  const filters = ['all', 'deposit', 'withdraw', 'donation', 'gift'];
+  const filterBar = filters.map(f => {
+    const active = factionLogFilter === f ? ' active' : '';
+    const label = f.charAt(0).toUpperCase() + f.slice(1);
+    return `<button class="faction-log-filter-btn${active}" onclick="setFactionLogFilter('${f}')">${label}</button>`;
+  }).join('');
+
+  const filtered = factionLogFilter === 'all'
+    ? factionLogLines
+    : factionLogLines.filter(l => l.includes(`[${factionLogFilter}]`));
+
+  const logHtml = filtered.map(l => `<div class="log-entry">${formatFactionLogLine(l)}</div>`).join('');
+
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Activity Log</div>
+      <div class="faction-log-filters">${filterBar}</div>
+      <div id="factionActivityLog" class="faction-log-content">${logHtml || '<span style="color:var(--text-dim)">No faction activity logged yet</span>'}</div>
+    </div>
+  `;
+}
+
+function formatFactionLogLine(line) {
+  const m = line.match(/^(\d{2}:\d{2}:\d{2})\s+\[([^\]]+)\]\s+([\s\S]*)$/);
+  if (!m) return `<span class="log-msg">${esc(line)}</span>`;
+  const [, time, type, msg] = m;
+  const typeColors = { deposit: '#4ade80', withdraw: '#f97316', donation: '#a78bfa', gift: '#38bdf8' };
+  const color = typeColors[type] || 'var(--text-dim)';
+  return `<span class="log-time">${esc(time)}</span> <span style="color:${color};font-weight:600">[${esc(type)}]</span> <span class="log-msg">${esc(msg)}</span>`;
+}
+
+function setFactionLogFilter(filter) {
+  factionLogFilter = filter;
+  if (factionSelectedBot) renderFactionContent(factionSelectedBot);
+}
+
+function appendFactionLogLine(line) {
+  const log = document.getElementById('factionActivityLog');
+  if (!log) return;
+  if (factionLogFilter !== 'all' && !line.includes(`[${factionLogFilter}]`)) return;
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = formatFactionLogLine(line);
+  log.appendChild(div);
+  while (log.children.length > 300) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
 }
 
 // ── Faction Rooms ────────────────────────────────────────────
@@ -6232,10 +6681,16 @@ function fetchFacilityHelp(username) {
   const container = document.getElementById('factionFacilityHelp');
   if (!container) return;
   container.innerHTML = '<div class="faction-no-data">Loading...</div>';
-  sendExec(username, 'facility', { action: 'help' }, (result) => {
-    const data = result.data || result.error || 'No response';
-    container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0;max-height:400px;overflow-y:auto">${esc(typeof data === 'string' ? data : JSON.stringify(data, null, 2))}</pre></div>`;
-  });
+  // Facility help is only available via GET, not POST
+  fetch('https://game.spacemolt.com/api/v2/spacemolt_facility/help')
+    .then(r => r.json())
+    .then(data => {
+      const text = data.result || data.error?.message || JSON.stringify(data, null, 2);
+      container.innerHTML = `<div class="faction-card"><pre style="font-size:11px;color:var(--text);white-space:pre-wrap;margin:0;max-height:400px;overflow-y:auto">${esc(typeof text === 'string' ? text : JSON.stringify(text, null, 2))}</pre></div>`;
+    })
+    .catch(err => {
+      container.innerHTML = `<div class="faction-no-data">${esc(String(err))}</div>`;
+    });
 }
 
 function factionDiploAction(username, action) {
@@ -6477,6 +6932,344 @@ function saveExplorerSettings() {
   settings.explorer = s;
 }
 
+// ── Gas Harvester Settings ──────────────────────────────────
+
+function renderGasHarvesterSettings(panel) {
+  const g = settings.gas_harvester || {};
+  const depositMode = g.depositMode || 'storage';
+  const cargoThreshold = g.cargoThreshold ?? 80;
+  const refuelThreshold = g.refuelThreshold ?? 50;
+  const repairThreshold = g.repairThreshold ?? 40;
+  const currentSystem = g.system || '';
+  const depositBot = g.depositBot || '';
+  const targetGas = g.targetGas || '';
+
+  const systemOpts = ['<option value="">(current system)</option>'];
+  for (const sys of knownSystems) {
+    const sel = sys.id === currentSystem ? ' selected' : '';
+    const label = sys.name ? `${sys.name} (${sys.id})` : sys.id;
+    systemOpts.push(`<option value="${esc(sys.id)}"${sel}>${esc(label)}</option>`);
+  }
+  if (currentSystem && !knownSystems.find(s => s.id === currentSystem)) {
+    systemOpts.push(`<option value="${esc(currentSystem)}" selected>${esc(currentSystem)}</option>`);
+  }
+
+  const gasOres = knownOres.filter(o => {
+    const n = o.name.toLowerCase();
+    return n.includes('gas') || n.includes('nebula') || n.includes('plasma') || n.includes('hydrogen') || n.includes('helium');
+  });
+  const oreList = gasOres.length > 0 ? gasOres : knownOres;
+  const oreOpts = ['<option value="">(any gas — harvest whatever is available)</option>'];
+  for (const ore of oreList) {
+    const sel = ore.item_id === targetGas ? ' selected' : '';
+    oreOpts.push(`<option value="${esc(ore.item_id)}"${sel}>${esc(ore.name)}</option>`);
+  }
+  if (targetGas && !oreList.find(o => o.item_id === targetGas)) {
+    oreOpts.push(`<option value="${esc(targetGas)}" selected>${esc(targetGas)}</option>`);
+  }
+
+  const botOpts = ['<option value="">(none — keep in own cargo)</option>'];
+  for (const bot of bots) {
+    const sel = bot.username === depositBot ? ' selected' : '';
+    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  }
+
+  panel.innerHTML = `
+    <h3>Gas Harvester Settings</h3>
+    <div class="settings-desc">Configure gas cloud harvesting bots. They travel to gas clouds/nebulae and mine gas resources.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Target Gas</div>
+        <div class="setting-hint">Seek a specific gas type. Bot will look for gas clouds with this resource.</div>
+      </div>
+      <select id="set-gas-targetGas">${oreOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Harvesting System</div>
+        <div class="setting-hint">Override system to harvest in. Bot will jump there on start.</div>
+      </div>
+      <select id="set-gas-system">${systemOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Send Gas To</div>
+        <div class="setting-hint">Transfer harvested gas to another bot's station storage via trade.</div>
+      </div>
+      <select id="set-gas-depositBot">${botOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Deposit Mode</div>
+        <div class="setting-hint">What to do with gas when returning to station.</div>
+      </div>
+      <select id="set-gas-depositMode">
+        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
+        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
+        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cargo Fill Threshold</div>
+        <div class="setting-hint">Return to station when cargo reaches this % full.</div>
+      </div>
+      <input type="number" id="set-gas-cargoThreshold" min="50" max="100" value="${cargoThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel at station when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-gas-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull at station when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-gas-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveGasHarvesterSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveGasHarvesterSettings() {
+  const s = {
+    targetGas: document.getElementById('set-gas-targetGas').value,
+    system: document.getElementById('set-gas-system').value,
+    depositBot: document.getElementById('set-gas-depositBot').value,
+    depositMode: document.getElementById('set-gas-depositMode').value,
+    cargoThreshold: parseInt(document.getElementById('set-gas-cargoThreshold').value) || 80,
+    refuelThreshold: parseInt(document.getElementById('set-gas-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-gas-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'gas_harvester', settings: s });
+  settings.gas_harvester = s;
+}
+
+// ── Ice Harvester Settings ──────────────────────────────────
+
+function renderIceHarvesterSettings(panel) {
+  const ic = settings.ice_harvester || {};
+  const depositMode = ic.depositMode || 'storage';
+  const cargoThreshold = ic.cargoThreshold ?? 80;
+  const refuelThreshold = ic.refuelThreshold ?? 50;
+  const repairThreshold = ic.repairThreshold ?? 40;
+  const currentSystem = ic.system || '';
+  const depositBot = ic.depositBot || '';
+  const targetIce = ic.targetIce || '';
+
+  const systemOpts = ['<option value="">(current system)</option>'];
+  for (const sys of knownSystems) {
+    const sel = sys.id === currentSystem ? ' selected' : '';
+    const label = sys.name ? `${sys.name} (${sys.id})` : sys.id;
+    systemOpts.push(`<option value="${esc(sys.id)}"${sel}>${esc(label)}</option>`);
+  }
+  if (currentSystem && !knownSystems.find(s => s.id === currentSystem)) {
+    systemOpts.push(`<option value="${esc(currentSystem)}" selected>${esc(currentSystem)}</option>`);
+  }
+
+  const iceOres = knownOres.filter(o => {
+    const n = o.name.toLowerCase();
+    return n.includes('ice') || n.includes('frost') || n.includes('cryo') || n.includes('water');
+  });
+  const oreList = iceOres.length > 0 ? iceOres : knownOres;
+  const oreOpts = ['<option value="">(any ice — harvest whatever is available)</option>'];
+  for (const ore of oreList) {
+    const sel = ore.item_id === targetIce ? ' selected' : '';
+    oreOpts.push(`<option value="${esc(ore.item_id)}"${sel}>${esc(ore.name)}</option>`);
+  }
+  if (targetIce && !oreList.find(o => o.item_id === targetIce)) {
+    oreOpts.push(`<option value="${esc(targetIce)}" selected>${esc(targetIce)}</option>`);
+  }
+
+  const botOpts = ['<option value="">(none — keep in own cargo)</option>'];
+  for (const bot of bots) {
+    const sel = bot.username === depositBot ? ' selected' : '';
+    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  }
+
+  panel.innerHTML = `
+    <h3>Ice Harvester Settings</h3>
+    <div class="settings-desc">Configure ice field harvesting bots. They travel to ice fields and mine ice resources.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Target Ice</div>
+        <div class="setting-hint">Seek a specific ice type. Bot will look for ice fields with this resource.</div>
+      </div>
+      <select id="set-ice-targetIce">${oreOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Harvesting System</div>
+        <div class="setting-hint">Override system to harvest in. Bot will jump there on start.</div>
+      </div>
+      <select id="set-ice-system">${systemOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Send Ice To</div>
+        <div class="setting-hint">Transfer harvested ice to another bot's station storage via trade.</div>
+      </div>
+      <select id="set-ice-depositBot">${botOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Deposit Mode</div>
+        <div class="setting-hint">What to do with ice when returning to station.</div>
+      </div>
+      <select id="set-ice-depositMode">
+        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
+        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
+        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cargo Fill Threshold</div>
+        <div class="setting-hint">Return to station when cargo reaches this % full.</div>
+      </div>
+      <input type="number" id="set-ice-cargoThreshold" min="50" max="100" value="${cargoThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel at station when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-ice-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull at station when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-ice-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveIceHarvesterSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveIceHarvesterSettings() {
+  const s = {
+    targetIce: document.getElementById('set-ice-targetIce').value,
+    system: document.getElementById('set-ice-system').value,
+    depositBot: document.getElementById('set-ice-depositBot').value,
+    depositMode: document.getElementById('set-ice-depositMode').value,
+    cargoThreshold: parseInt(document.getElementById('set-ice-cargoThreshold').value) || 80,
+    refuelThreshold: parseInt(document.getElementById('set-ice-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-ice-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'ice_harvester', settings: s });
+  settings.ice_harvester = s;
+}
+
+// ── Salvager Settings ───────────────────────────────────────
+
+function renderSalvagerSettings(panel) {
+  const sv = settings.salvager || {};
+  const depositMode = sv.depositMode || 'sell';
+  const cargoThreshold = sv.cargoThreshold ?? 80;
+  const refuelThreshold = sv.refuelThreshold ?? 50;
+  const repairThreshold = sv.repairThreshold ?? 40;
+  const currentSystem = sv.system || '';
+
+  const systemOpts = ['<option value="">(current system)</option>'];
+  for (const sys of knownSystems) {
+    const sel = sys.id === currentSystem ? ' selected' : '';
+    const label = sys.name ? `${sys.name} (${sys.id})` : sys.id;
+    systemOpts.push(`<option value="${esc(sys.id)}"${sel}>${esc(label)}</option>`);
+  }
+  if (currentSystem && !knownSystems.find(s => s.id === currentSystem)) {
+    systemOpts.push(`<option value="${esc(currentSystem)}" selected>${esc(currentSystem)}</option>`);
+  }
+
+  panel.innerHTML = `
+    <h3>Salvager Settings</h3>
+    <div class="settings-desc">Configure salvage bots. They visit POIs in a system, scavenging wrecks for loot and materials.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Target System</div>
+        <div class="setting-hint">Override system to salvage in. Bot will jump there on start.</div>
+      </div>
+      <select id="set-salvager-system">${systemOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Deposit Mode</div>
+        <div class="setting-hint">What to do with salvaged items when returning to station.</div>
+      </div>
+      <select id="set-salvager-depositMode">
+        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
+        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
+        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cargo Fill Threshold</div>
+        <div class="setting-hint">Return to station when cargo reaches this % full.</div>
+      </div>
+      <input type="number" id="set-salvager-cargoThreshold" min="50" max="100" value="${cargoThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold</div>
+        <div class="setting-hint">Refuel at station when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-salvager-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold</div>
+        <div class="setting-hint">Repair hull at station when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-salvager-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveSalvagerSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveSalvagerSettings() {
+  const s = {
+    system: document.getElementById('set-salvager-system').value,
+    depositMode: document.getElementById('set-salvager-depositMode').value,
+    cargoThreshold: parseInt(document.getElementById('set-salvager-cargoThreshold').value) || 80,
+    refuelThreshold: parseInt(document.getElementById('set-salvager-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-salvager-repairThreshold').value) || 40,
+  };
+  send({ type: 'saveSettings', routine: 'salvager', settings: s });
+  settings.salvager = s;
+}
+
 // ── Shipyard ────────────────────────────────────────────────
 let shipyardSelectedBot = null;
 let shipyardActivePanel = 'overview';
@@ -6520,7 +7313,9 @@ function selectShipyardBot(username) {
 function fetchShipDetails(username) {
   const content = document.getElementById('shipyardContent');
   content.innerHTML = '<div class="faction-no-data">Loading ship data...</div>';
-  sendExec(username, 'get_ship', undefined, (result) => {
+  // get_status returns enriched module objects at top level: { player, ship, modules: Module[] }
+  // This is how the reference client gets module names/stats — NOT from ship.modules (which is just UUIDs)
+  sendExec(username, 'get_status', undefined, (result) => {
     if (shipyardSelectedBot !== username) return;
     if (!result.ok || !result.data) {
       shipyardShipData = null;
@@ -6581,15 +7376,47 @@ function switchShipyardPanel(panel) {
 // ── Overview panel ──────────────────────────────────────────
 
 /** Deep-search a ship object for arrays of module-like objects. */
-function findModules(ship) {
-  // Try direct known keys first
-  const directKeys = ['modules', 'installed_modules', 'fitted_modules', 'loadout',
-    'fitted', 'mods', 'equipment', 'fittings'];
-  for (const k of directKeys) {
-    if (Array.isArray(ship[k]) && ship[k].length > 0) return ship[k];
+// Extract the ship object from various response shapes
+function extractShip(data) {
+  if (!data || typeof data !== 'object') return data;
+  // get_status: { player: {...}, ship: {...}, modules: [...] }
+  // get_ship: { ship: {...} } or just the ship directly
+  // v2 state envelope: { state: { ship: {...} } }
+  if (data.ship && typeof data.ship === 'object') return data.ship;
+  if (data.state?.ship) return data.state.ship;
+  if (data.player?.ship) return data.player.ship;
+  return data;
+}
+
+// Extract enriched module objects from response data.
+// get_status returns modules at top level: { ship: {...}, modules: Module[] }
+// ship.modules is just UUID strings — avoid those.
+function findModules(ship, fullData) {
+  // First check: top-level modules array from get_status response (enriched Module[])
+  if (fullData && Array.isArray(fullData.modules) && fullData.modules.length > 0) {
+    if (typeof fullData.modules[0] === 'object' && fullData.modules[0] !== null) {
+      return fullData.modules;
+    }
   }
-  // Search one level deep for arrays of objects with module-like fields
+  // Also check state envelope
+  if (fullData?.state && Array.isArray(fullData.state.modules) && fullData.state.modules.length > 0) {
+    if (typeof fullData.state.modules[0] === 'object' && fullData.state.modules[0] !== null) {
+      return fullData.state.modules;
+    }
+  }
+
+  // Fallback: search the ship object for enriched module arrays
+  const directKeys = ['installed_modules', 'fitted_modules', 'loadout',
+    'fitted', 'mods', 'equipment', 'fittings', 'modules'];
+  let stringFallback = null;
+  for (const k of directKeys) {
+    if (!Array.isArray(ship[k]) || ship[k].length === 0) continue;
+    if (typeof ship[k][0] === 'object' && ship[k][0] !== null) return ship[k];
+    if (typeof ship[k][0] === 'string' && !stringFallback) stringFallback = ship[k];
+  }
+  // Deep search for module-like object arrays
   for (const [key, val] of Object.entries(ship)) {
+    if (directKeys.includes(key)) continue;
     if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object' && val[0] !== null) {
       const first = val[0];
       if (first.module_id || first.module_name || first.slot_type || first.slot ||
@@ -6599,13 +7426,20 @@ function findModules(ship) {
       }
     }
   }
+  // Last resort: wrap string UUIDs as objects
+  if (stringFallback) {
+    return stringFallback.map(id => {
+      const catEntry = catalog.items[id];
+      return { _stringId: true, module_id: id, id: id, name: catEntry?.name || undefined, category: catEntry?.category || undefined };
+    });
+  }
   return [];
 }
 
 function renderShipOverview(data, username) {
   if (!data) return '<div class="faction-no-data">No ship data available</div>';
 
-  const ship = data.ship || data;
+  const ship = extractShip(data);
   const name = ship.name || ship.ship_name || '?';
   const cls = ship.class || ship.ship_class || '';
   const tier = ship.tier || '';
@@ -6637,18 +7471,25 @@ function renderShipOverview(data, username) {
     return `<div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
   }
 
-  // Module slots — deep-search for arrays of module-like objects
-  const modules = findModules(ship);
+  // Module slots — check top-level enriched modules first, then ship object
+  const modules = findModules(ship, data);
   const slots = ship.slots || ship.module_slots || {};
   let slotsHtml = '';
   if (modules.length > 0) {
     slotsHtml = '<div class="shipyard-slots">';
     for (const m of modules) {
-      const mName = m.name || m.module_name || m.id || '?';
+      const mName = m.name || m.module_name || m.type_id || m.module_id || m.id || '?';
       const mType = m.type || m.slot_type || m.category || m.slot || '';
+      const mWear = m.wear ?? m.wear_status ?? '';
+      const wearStr = mWear !== '' ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">Wear: ${mWear}${typeof mWear === 'number' ? '%' : ''}</div>` : '';
+      // Use catalog lookup for UUID-only modules, then formatted ID as last resort
+      const displayName = (mName === m.module_id || mName === m.id) && !m.name
+        ? catalogName(mName)
+        : mName;
       slotsHtml += `<div class="shipyard-slot">
         <div class="slot-type">${esc(mType)}</div>
-        <div class="slot-name">${esc(mName)}</div>
+        <div class="slot-name">${esc(displayName)}</div>
+        ${wearStr}
       </div>`;
     }
     slotsHtml += '</div>';
@@ -6794,6 +7635,14 @@ function renderFleetPanel(ships, username, error) {
 
 // ── Shipyard (catalog) panel ────────────────────────────────
 function fetchShipCatalog(username) {
+  // Use cached catalog ships if available
+  const catalogShips = Object.values(catalog.ships || {});
+  if (catalogShips.length > 0) {
+    if (shipyardSelectedBot !== username || shipyardActivePanel !== 'shipyard') return;
+    shipyardCatalogData = catalogShips;
+    renderCatalogInline(username, catalogShips);
+    return;
+  }
   sendExec(username, 'catalog', { type: 'ships' }, (result) => {
     if (shipyardSelectedBot !== username || shipyardActivePanel !== 'shipyard') return;
     if (!result.ok || !result.data) {
@@ -7015,8 +7864,8 @@ function filterCatalog() {
 function renderModulesPanel(data, username) {
   if (!data) return '<div class="faction-no-data">No ship data available</div>';
 
-  const ship = data.ship || data;
-  const modules = findModules(ship);
+  const ship = extractShip(data);
+  const modules = findModules(ship, data);
   const cpu = ship.cpu_used ?? 0;
   const maxCpu = ship.cpu_capacity ?? ship.max_cpu ?? 0;
   const power = ship.power_used ?? 0;
@@ -7024,13 +7873,29 @@ function renderModulesPanel(data, username) {
   const cpuPct = maxCpu > 0 ? Math.round((cpu / maxCpu) * 100) : 0;
   const powerPct = maxPower > 0 ? Math.round((power / maxPower) * 100) : 0;
 
+  // Slot capacity
+  const wSlots = ship.weapon_slots ?? 0;
+  const dSlots = ship.defense_slots ?? 0;
+  const uSlots = ship.utility_slots ?? 0;
+  const totalSlots = wSlots + dSlots + uSlots;
+
   let html = `<div class="faction-section">
     <div class="faction-section-title">Resource Budget</div>
     <div class="shipyard-stat-grid">
       <span class="ssl">CPU</span><span class="ssv">${cpu} / ${maxCpu} <div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${cpuPct}%;background:var(--magenta)"></div></div></span>
       <span class="ssl">Power</span><span class="ssv">${power} / ${maxPower} <div class="shipyard-bar"><div class="shipyard-bar-fill" style="width:${powerPct}%;background:var(--accent)"></div></div></span>
+      ${totalSlots > 0 ? `<span class="ssl">Slots</span><span class="ssv">${modules.length} / ${totalSlots} used${wSlots ? ` (W:${wSlots}` : ''}${dSlots ? ` D:${dSlots}` : ''}${uSlots ? ` U:${uSlots}` : ''}${totalSlots > 0 ? ')' : ''}</span>` : ''}
     </div>
   </div>`;
+
+  // Debug: show raw module data shape
+  const topModules = Array.isArray(data.modules) ? data.modules : [];
+  const shipModules = ship.modules || ship.installed_modules || [];
+  const rawSample = topModules.length > 0
+    ? 'top-level modules[0]: ' + JSON.stringify(topModules[0], null, 2)
+    : shipModules.length > 0
+      ? 'ship.modules[0]: ' + JSON.stringify(shipModules[0], null, 2)
+      : '(no module data found)';
 
   // Installed modules
   html += `<div class="faction-section">
@@ -7040,40 +7905,74 @@ function renderModulesPanel(data, username) {
   } else {
     html += '<div class="faction-card">';
     for (const m of modules) {
-      const mName = m.name || m.module_name || m.id || '?';
+      const rawName = m.name || m.module_name || m.type_id || m.module_id || m.id || '?';
+      // Use catalog lookup for UUID-only modules, then formatted ID as last resort
+      const mName = (!m.name && !m.module_name && rawName !== '?')
+        ? catalogName(rawName)
+        : rawName;
       const mType = m.type || m.slot_type || m.category || '';
-      const mId = m.instance_id || m.module_instance_id || m.id || '';
-      const mCpu = m.cpu ?? '';
-      const mPower = m.power ?? '';
-      const detail = [mType, mCpu !== '' ? `CPU: ${mCpu}` : '', mPower !== '' ? `Pwr: ${mPower}` : ''].filter(Boolean).join(' | ');
+      const mId = m.module_id || m.instance_id || m.module_instance_id || m.id || '';
+      const mCpu = m.cpu_usage ?? m.cpu_cost ?? m.cpu ?? '';
+      const mPower = m.power_usage ?? m.power_cost ?? m.power ?? '';
+      const mWear = m.wear ?? m.wear_status ?? '';
+      const mQuality = m.quality_grade || (m.quality != null ? `Q${m.quality}` : '');
+      const detailParts = [mType];
+      if (mCpu !== '') detailParts.push(`CPU: ${mCpu}`);
+      if (mPower !== '') detailParts.push(`Pwr: ${mPower}`);
+      if (mWear !== '') detailParts.push(`Wear: ${mWear}${typeof mWear === 'number' ? '%' : ''}`);
+      if (mQuality) detailParts.push(mQuality);
+      // Show extra stats (mining_power, damage, etc.)
+      if (m.stats && typeof m.stats === 'object') {
+        for (const [sk, sv] of Object.entries(m.stats)) {
+          detailParts.push(`${sk.replace(/_/g, ' ')}: ${sv}`);
+        }
+      } else {
+        if (m.mining_power) detailParts.push(`Mining: ${m.mining_power}`);
+        if (m.damage) detailParts.push(`Dmg: ${m.damage}`);
+        if (m.shield_bonus) detailParts.push(`Shield: +${m.shield_bonus}`);
+        if (m.armor_bonus) detailParts.push(`Armor: +${m.armor_bonus}`);
+      }
+      const detail = detailParts.filter(Boolean).join(' | ');
       html += `<div class="shipyard-mod-row">
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="shipyard-mod-name">${esc(mName)}</div>
           ${detail ? `<div class="shipyard-mod-detail">${esc(detail)}</div>` : ''}
         </div>
-        <button class="sm" style="color:var(--red)" onclick="shipUninstallMod('${esc(username)}','${esc(mId)}')">Uninstall</button>
+        <button class="sm" style="color:var(--red);flex-shrink:0" onclick="shipUninstallMod('${esc(username)}','${esc(mId)}')">Uninstall</button>
       </div>`;
     }
     html += '</div>';
   }
   html += '</div>';
 
-  // Available modules from cargo — fetch and render
+  // Available modules from cargo + storage
   html += `<div class="faction-section">
-    <div class="faction-section-title">Available from Cargo/Storage</div>
-    <div id="sy-available-mods"><div class="faction-no-data">Loading inventory...</div></div>
+    <div class="faction-section-title">Available from Cargo</div>
+    <div id="sy-cargo-mods"><div class="faction-no-data">Loading cargo...</div></div>
+  </div>`;
+  html += `<div class="faction-section">
+    <div class="faction-section-title">Available from Storage</div>
+    <div id="sy-storage-mods"><div class="faction-no-data">Loading storage...</div></div>
   </div>`;
 
-  // Trigger async fetch for cargo modules
-  setTimeout(() => fetchAvailableMods(username), 0);
+  // Debug: raw module data
+  html += `<details style="margin-top:12px">
+    <summary style="cursor:pointer;font-size:11px;color:var(--text-dim)">Debug: Raw Module Data</summary>
+    <pre style="font-size:10px;color:var(--text-dim);white-space:pre-wrap;margin-top:6px;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid #21262d;border-radius:4px;padding:8px">${esc(rawSample)}</pre>
+  </details>`;
+
+  // Trigger async fetches for cargo and storage
+  setTimeout(() => {
+    fetchCargoMods(username);
+    fetchStorageMods(username);
+  }, 0);
 
   return html;
 }
 
-function fetchAvailableMods(username) {
-  const container = document.getElementById('sy-available-mods');
+function fetchCargoMods(username) {
+  const container = document.getElementById('sy-cargo-mods');
   if (!container) return;
-  // get_cargo should return items that include modules
   sendExec(username, 'get_cargo', undefined, (result) => {
     if (shipyardSelectedBot !== username || shipyardActivePanel !== 'modules') return;
     if (!result.ok || !result.data) {
@@ -7082,39 +7981,76 @@ function fetchAvailableMods(username) {
     }
     const d = result.data;
     const items = Array.isArray(d) ? d : (d.items || d.cargo || d.inventory || []);
-    // Filter to module-type items
-    const mods = items.filter(i => {
-      const cat = (i.category || i.type || '').toLowerCase();
-      return cat.includes('module') || cat.includes('mod') || cat.includes('weapon') ||
-        cat.includes('defense') || cat.includes('utility') || cat.includes('equipment');
-    });
-
-    if (mods.length === 0) {
-      // Show all items if no modules detected (game might not categorize)
-      if (items.length > 0) {
-        container.innerHTML = renderCargoModsList(items, username);
-      } else {
-        container.innerHTML = '<div class="faction-no-data">No items in cargo</div>';
-      }
+    if (items.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">Cargo is empty</div>';
       return;
     }
-    container.innerHTML = renderCargoModsList(mods, username);
+    // Filter to module-type items; fall back to showing all if none match
+    const mods = items.filter(i => {
+      const cat = (i.category || i.type || '').toLowerCase();
+      const name = (i.name || '').toLowerCase();
+      return cat.includes('module') || cat.includes('mod') || cat.includes('weapon') ||
+        cat.includes('defense') || cat.includes('utility') || cat.includes('equipment') ||
+        name.includes('module') || name.includes('laser') || name.includes('shield') ||
+        name.includes('armor') || name.includes('scanner') || name.includes('harvester') ||
+        name.includes('drill') || name.includes('engine') || name.includes('booster');
+    });
+    container.innerHTML = renderModItemsList(mods.length > 0 ? mods : items, username, 'cargo');
   });
 }
 
-function renderCargoModsList(items, username) {
+function fetchStorageMods(username) {
+  const container = document.getElementById('sy-storage-mods');
+  if (!container) return;
+  sendExec(username, 'view_storage', undefined, (result) => {
+    if (shipyardSelectedBot !== username || shipyardActivePanel !== 'modules') return;
+    if (!result.ok || !result.data) {
+      container.innerHTML = '<div class="faction-no-data">Not docked or no storage</div>';
+      return;
+    }
+    const d = result.data;
+    const items = Array.isArray(d) ? d : (d.items || d.storage || d.inventory || []);
+    if (items.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">Storage is empty</div>';
+      return;
+    }
+    // Filter to module-type items; fall back to showing all
+    const mods = items.filter(i => {
+      const cat = (i.category || i.type || '').toLowerCase();
+      const name = (i.name || '').toLowerCase();
+      return cat.includes('module') || cat.includes('mod') || cat.includes('weapon') ||
+        cat.includes('defense') || cat.includes('utility') || cat.includes('equipment') ||
+        name.includes('module') || name.includes('laser') || name.includes('shield') ||
+        name.includes('armor') || name.includes('scanner') || name.includes('harvester') ||
+        name.includes('drill') || name.includes('engine') || name.includes('booster');
+    });
+    container.innerHTML = renderModItemsList(mods.length > 0 ? mods : items, username, 'storage');
+  });
+}
+
+function renderModItemsList(items, username, source) {
   let html = '<div class="faction-card">';
   for (const item of items) {
     const name = item.name || item.item_name || item.id || '?';
-    const id = item.id || item.item_id || item.module_id || '';
+    const id = item.item_id || item.module_id || item.id || '';
     const qty = item.quantity ?? item.count ?? 1;
     const cat = item.category || item.type || '';
+    const wear = item.wear ?? item.wear_status ?? '';
+    const quality = item.quality_grade || (item.quality != null ? `Q${item.quality}` : '');
+    const detailParts = [cat];
+    if (wear !== '') detailParts.push(`Wear: ${wear}${typeof wear === 'number' ? '%' : ''}`);
+    if (quality) detailParts.push(quality);
+    const detail = detailParts.filter(Boolean).join(' | ');
+    // For storage items, need to withdraw first then install
+    const action = source === 'storage'
+      ? `shipWithdrawAndInstall('${esc(username)}','${esc(id)}','${esc(name)}')`
+      : `shipInstallMod('${esc(username)}','${esc(id)}')`;
     html += `<div class="shipyard-mod-row">
-      <div>
+      <div style="flex:1;min-width:0">
         <div class="shipyard-mod-name">${esc(name)} ${qty > 1 ? `<span style="color:var(--text-dim)">x${qty}</span>` : ''}</div>
-        ${cat ? `<div class="shipyard-mod-detail">${esc(cat)}</div>` : ''}
+        ${detail ? `<div class="shipyard-mod-detail">${esc(detail)}</div>` : ''}
       </div>
-      <button class="primary sm" onclick="shipInstallMod('${esc(username)}','${esc(id)}')">Install</button>
+      <button class="primary sm" style="flex-shrink:0" onclick="${action}">${source === 'storage' ? 'Withdraw & Install' : 'Install'}</button>
     </div>`;
   }
   html += '</div>';
@@ -7163,9 +8099,9 @@ function shipSwitch(username, shipId) {
 
 function shipInstallMod(username, modId) {
   if (!modId) return;
-  sendExec(username, 'install_mod', { id: modId }, (result) => {
+  sendExec(username, 'install_mod', { module_id: modId }, (result) => {
     if (result.ok) {
-      appendLine('system', `${username} installed a module`);
+      appendLine('system', `${username} installed module: ${modId}`);
       fetchShipDetails(username);
     } else {
       appendLine('system', `Install module failed: ${result.error || 'unknown'}`);
@@ -7175,13 +8111,33 @@ function shipInstallMod(username, modId) {
 
 function shipUninstallMod(username, modId) {
   if (!modId) return;
-  sendExec(username, 'uninstall_mod', { id: modId }, (result) => {
+  sendExec(username, 'uninstall_mod', { module_id: modId }, (result) => {
     if (result.ok) {
-      appendLine('system', `${username} uninstalled a module`);
+      appendLine('system', `${username} uninstalled module: ${modId}`);
       fetchShipDetails(username);
     } else {
       appendLine('system', `Uninstall module failed: ${result.error || 'unknown'}`);
     }
+  });
+}
+
+function shipWithdrawAndInstall(username, itemId, itemName) {
+  if (!itemId) return;
+  appendLine('system', `Withdrawing ${itemName || itemId} from storage...`);
+  sendExec(username, 'withdraw_items', { item_id: itemId, quantity: 1 }, (wResult) => {
+    if (!wResult.ok) {
+      appendLine('system', `Withdraw failed: ${wResult.error || 'unknown'}`);
+      return;
+    }
+    sendExec(username, 'install_mod', { module_id: itemId }, (iResult) => {
+      if (iResult.ok) {
+        appendLine('system', `${username} installed ${itemName || itemId} from storage`);
+        fetchShipDetails(username);
+      } else {
+        appendLine('system', `Install failed after withdraw: ${iResult.error || 'unknown'} — item is now in cargo`);
+        fetchShipDetails(username);
+      }
+    });
   });
 }
 
@@ -7222,6 +8178,7 @@ function shipSetColors(username) {
 
 // ── Init ───────────────────────────────────────────────────
 connect();
+setInterval(refreshFactionFunds, 60000);
 </script>
 </body>
 </html>

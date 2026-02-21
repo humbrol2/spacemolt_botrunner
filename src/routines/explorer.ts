@@ -458,6 +458,7 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
     }
 
     ctx.log("travel", `Jumped to ${nextSystem.name || nextSystem.id}`);
+    bot.stats.totalSystems++;
   }
 };
 

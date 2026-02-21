@@ -476,6 +476,11 @@ class MapStore {
     return this.data.systems[id] ?? null;
   }
 
+  /** Return all stored system IDs. */
+  getAllSystemIds(): string[] {
+    return Object.keys(this.data.systems);
+  }
+
   /** Find nearest station POI within a known system. */
   findNearestStation(systemId: string): StoredPOI | null {
     const sys = this.data.systems[systemId];
@@ -731,6 +736,66 @@ class MapStore {
 
     results.sort((a, b) => b.spread - a.spread);
     return results;
+  }
+
+  /**
+   * Seed the galaxy map from the public /api/map endpoint.
+   * Adds all systems and their connections without requiring any bot session.
+   * Existing POI, market, and ore data is preserved — only system metadata
+   * and connection graphs are updated.
+   */
+  async seedFromMapAPI(): Promise<{ seeded: number; known: number; failed: boolean }> {
+    const MAP_API_URL = "https://game.spacemolt.com/api/map";
+    try {
+      const resp = await fetch(MAP_API_URL, { signal: AbortSignal.timeout(15_000) });
+      if (!resp.ok) {
+        return { seeded: 0, known: 0, failed: true };
+      }
+
+      const raw = (await resp.json()) as Record<string, unknown>;
+      const systems = Array.isArray(raw.systems)
+        ? (raw.systems as Array<Record<string, unknown>>)
+        : [];
+
+      if (systems.length === 0) return { seeded: 0, known: 0, failed: true };
+
+      // Build ID → name lookup so connections can be resolved to names
+      const nameById = new Map<string, string>();
+      for (const sys of systems) {
+        const id = sys.id as string;
+        const name = sys.name as string;
+        if (id && name) nameById.set(id, name);
+      }
+
+      let seeded = 0;
+      let known = 0;
+
+      for (const sys of systems) {
+        const id = sys.id as string;
+        if (!id) continue;
+
+        if (this.data.systems[id]) {
+          known++;
+        } else {
+          seeded++;
+        }
+
+        // Transform connection ID array → StoredConnection objects
+        const rawConns = sys.connections;
+        const connections: Array<Record<string, unknown>> = Array.isArray(rawConns)
+          ? (rawConns as string[]).map((connId) => ({
+              system_id: connId,
+              system_name: nameById.get(connId) || connId,
+            }))
+          : [];
+
+        this.updateSystem({ ...sys, connections });
+      }
+
+      return { seeded, known, failed: false };
+    } catch {
+      return { seeded: 0, known: 0, failed: true };
+    }
   }
 
   /** Return the full systems map for the web dashboard. */

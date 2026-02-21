@@ -16,6 +16,7 @@ import {
   ensureFueled,
   navigateToSystem,
   refuelAtStation,
+  factionDonateProfit,
   readSettings,
   scavengeWrecks,
   sleep,
@@ -386,6 +387,7 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
       if (oreId && bot.poi) {
         mapStore.recordMiningYield(bot.system, bot.poi, { item_id: oreId, name: oreName });
         oresMinedMap.set(oreName, (oresMinedMap.get(oreName) || 0) + 1);
+        bot.stats.totalMined++;
       }
 
       await bot.refreshStatus();
@@ -450,6 +452,7 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // ── Collect gifted credits/items + record market prices ──
     await collectFromStorage(ctx);
+    const creditsBefore = bot.credits;
 
     // ── Complete active missions before unloading (while cargo is still intact) ──
     if (settings.acceptMissions) {
@@ -526,6 +529,10 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
 
     await bot.refreshStatus();
     await bot.refreshStorage();
+
+    // ── Faction donation (10% of earnings from sales + mission rewards) ──
+    const earnings = bot.credits - creditsBefore;
+    await factionDonateProfit(ctx, earnings);
 
     // ── Accept mining missions for the next cycle ──
     if (settings.acceptMissions) {

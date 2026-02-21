@@ -8,7 +8,12 @@ import { crafterRoutine } from "./routines/crafter.js";
 import { rescueRoutine } from "./routines/rescue.js";
 import { coordinatorRoutine } from "./routines/coordinator.js";
 import { traderRoutine } from "./routines/trader.js";
+import { gasHarvesterRoutine } from "./routines/gas_harvester.js";
+import { iceHarvesterRoutine } from "./routines/ice_harvester.js";
+import { salvagerRoutine } from "./routines/salvager.js";
+import { hunterRoutine } from "./routines/hunter.js";
 import { mapStore } from "./mapstore.js";
+import { catalogStore } from "./catalogstore.js";
 import { WebServer, type WebAction, type WebActionResult } from "./web/server.js";
 import { setLogSink } from "./ui.js";
 import { debugLog } from "./debug.js";
@@ -26,6 +31,10 @@ const ROUTINES: Record<string, { name: string; fn: Routine }> = {
   rescue: { name: "FuelRescue", fn: rescueRoutine },
   coordinator: { name: "Coordinator", fn: coordinatorRoutine },
   trader: { name: "Trader", fn: traderRoutine },
+  gas_harvester: { name: "GasHarvester", fn: gasHarvesterRoutine },
+  ice_harvester: { name: "IceHarvester", fn: iceHarvesterRoutine },
+  salvager: { name: "Salvager", fn: salvagerRoutine },
+  hunter: { name: "Hunter", fn: hunterRoutine },
 };
 
 // ── Auto-discover existing sessions ─────────────────────────
@@ -61,6 +70,9 @@ function setupBotLogging(bot: Bot): void {
     // Per-bot log for profile page activity log
     const botLine = `${timestamp} [${category}] ${message}`;
     server.logBot(username, botLine);
+  };
+  bot.onFactionLog = (_username, line) => {
+    server.logFaction(line);
   };
 }
 
@@ -116,13 +128,19 @@ async function handleStart(action: WebAction): Promise<WebActionResult> {
 
   server.logSystem(`Starting ${bot.username} with ${routine.name} routine...`);
 
-  const startOpts = routineKey === "rescue"
+  const startOpts = (routineKey === "rescue" || routineKey === "coordinator")
     ? { getFleetStatus: () => [...bots.values()].map(b => b.status()) }
     : undefined;
 
-  bot.start(routineKey, routine.fn, startOpts).catch((err) => {
+  bot.start(routineKey, routine.fn, startOpts).then(() => {
+    server.logSystem(`Bot ${bot.username} routine finished.`);
+    server.clearBotAssignment(botName);
+  }).catch((err) => {
     server.logSystem(`Bot ${bot.username} crashed: ${err}`);
+    server.clearBotAssignment(botName);
   });
+
+  server.saveBotAssignment(botName, routineKey);
 
   return { ok: true, message: `Started ${botName} with ${routine.name}` };
 }
@@ -136,6 +154,7 @@ async function handleStop(action: WebAction): Promise<WebActionResult> {
   if (bot.state !== "running") return { ok: false, error: `${botName} is not running` };
 
   bot.stop();
+  server.clearBotAssignment(botName);
   server.logSystem(`Stop signal sent to ${bot.username}`);
   return { ok: true, message: `Stop signal sent to ${botName}` };
 }
@@ -282,6 +301,36 @@ async function handleExec(action: WebAction): Promise<WebActionResult> {
     refreshStatusTable();
   }
 
+  // Log manual faction operations to faction activity log
+  if (!resp.error) {
+    const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const p = params as Record<string, unknown> | undefined;
+    switch (command) {
+      case "faction_deposit_credits": {
+        const amt = p?.amount as number | undefined;
+        if (amt) server.logFaction(`${timestamp} [deposit] ${botName}: Deposited ${amt}cr to faction treasury`);
+        break;
+      }
+      case "faction_withdraw_credits": {
+        const amt = p?.amount as number | undefined;
+        if (amt) server.logFaction(`${timestamp} [withdraw] ${botName}: Withdrew ${amt}cr from faction treasury`);
+        break;
+      }
+      case "faction_deposit_items": {
+        const itemId = p?.item_id as string | undefined;
+        const qty = p?.quantity as number | undefined;
+        if (itemId) server.logFaction(`${timestamp} [deposit] ${botName}: Deposited ${qty || 1}x ${itemId} to faction storage`);
+        break;
+      }
+      case "faction_withdraw_items": {
+        const itemId = p?.item_id as string | undefined;
+        const qty = p?.quantity as number | undefined;
+        if (itemId) server.logFaction(`${timestamp} [withdraw] ${botName}: Withdrew ${qty || 1}x ${itemId} from faction storage`);
+        break;
+      }
+    }
+  }
+
   if (resp.error) {
     debugLog("exec:result", `${botName} > ${command} ERROR`, { error: resp.error.message, hasResult: resp.result !== undefined });
     return { ok: false, error: resp.error.message, data: resp.result };
@@ -329,34 +378,99 @@ async function main(): Promise<void> {
   server.logSystem("Loading saved sessions...");
 
   discoverBots();
+
+  // Seed galaxy map from public API so pathfinding works from first run
+  server.logSystem("Seeding galaxy map from /api/map...");
+  mapStore.seedFromMapAPI().then(({ seeded, known, failed }) => {
+    if (failed) {
+      server.logSystem("Galaxy map seed failed — will rely on exploration data");
+    } else {
+      server.logSystem(`Galaxy map seeded: ${seeded} new system(s), ${known} already known`);
+    }
+  }).catch(() => {
+    server.logSystem("Galaxy map seed failed — will rely on exploration data");
+  });
+
   if (bots.size > 0) {
+    const assignments = server.getBotAssignments();
     server.logSystem(`Found ${bots.size} saved bot(s): ${[...bots.keys()].join(", ")}`);
-    for (const [, bot] of bots) {
-      bot.login().then(() => refreshStatusTable()).catch(() => {});
+    for (const [name, bot] of bots) {
+      bot.login().then(async (ok) => {
+        refreshStatusTable();
+        if (!ok) return;
+        // Fetch catalog data if stale (first logged-in bot triggers it)
+        if (catalogStore.isStale()) {
+          try {
+            await catalogStore.fetchAll(bot.api);
+            server.logSystem(`Catalog fetched (${catalogStore.getSummary()})`);
+          } catch (err) {
+            server.logSystem(`Catalog fetch failed: ${err}`);
+          }
+        }
+        const routineKey = assignments[name];
+        if (!routineKey || !ROUTINES[routineKey]) return;
+        server.logSystem(`Auto-resuming ${name} with ${ROUTINES[routineKey].name}...`);
+        await handleStart({ type: "start", bot: name, routine: routineKey });
+      }).catch((err) => {
+        server.logSystem(`Login failed for ${name}: ${err}`);
+      });
     }
   }
 
   refreshStatusTable();
 
+  // Load catalog data (fetch if stale, using first available bot session)
+  if (!catalogStore.isStale()) {
+    server.logSystem(`Catalog loaded from cache (${catalogStore.getSummary()})`);
+  } else {
+    server.logSystem("Catalog data is stale, will fetch after first bot login...");
+  }
+
+  // Periodic timers (store IDs for cleanup)
+  const intervals: ReturnType<typeof setInterval>[] = [];
+
   // Periodic UI push (cached data → websocket clients)
-  setInterval(() => {
+  intervals.push(setInterval(() => {
     refreshStatusTable();
-  }, 2000);
+  }, 2000));
 
   // Periodic live refresh (hit API for all logged-in bots)
-  setInterval(async () => {
+  intervals.push(setInterval(async () => {
     for (const [, bot] of bots) {
       if (bot.api.getSession()) {
         await bot.refreshStatus().catch(() => {});
       }
     }
     refreshStatusTable();
-  }, 30000);
+  }, 30000));
 
   // Periodic map data push (every 15s so dashboard stays current)
-  setInterval(() => {
+  intervals.push(setInterval(() => {
     server.updateMapData();
-  }, 15000);
+  }, 15000));
+
+  // Periodic stats flush (every 60s)
+  intervals.push(setInterval(() => {
+    const statuses = [...bots.values()].map(b => b.status());
+    server.flushBotStats(statuses);
+  }, 60000));
+
+  // Daily catalog refresh (24h)
+  intervals.push(setInterval(async () => {
+    if (!catalogStore.isStale()) return;
+    // Find first bot with an active session
+    for (const [, bot] of bots) {
+      if (bot.api.getSession()) {
+        try {
+          await catalogStore.fetchAll(bot.api);
+          server.logSystem(`Catalog refreshed (${catalogStore.getSummary()})`);
+        } catch (err) {
+          server.logSystem(`Catalog refresh failed: ${err}`);
+        }
+        break;
+      }
+    }
+  }, 24 * 60 * 60 * 1000));
 
   // Start HTTP + WebSocket server
   server.start();
@@ -364,10 +478,16 @@ async function main(): Promise<void> {
   // Graceful shutdown
   process.on("SIGINT", () => {
     console.log("\nShutting down...");
+    // Clear intervals
+    for (const id of intervals) clearInterval(id);
+    // Flush stats before stopping bots
+    const statuses = [...bots.values()].map(b => b.status());
+    server.flushBotStats(statuses);
     for (const [, bot] of bots) {
       if (bot.state === "running") bot.stop();
     }
     mapStore.flush();
+    catalogStore.flush();
     server.stop();
     process.exit(0);
   });
