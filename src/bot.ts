@@ -2,6 +2,7 @@ import { SpaceMoltAPI, type ApiResponse } from "./api.js";
 import { SessionManager, type Credentials } from "./session.js";
 import { log, logError, logNotifications } from "./ui.js";
 import { debugLog } from "./debug.js";
+import { mapStore } from "./mapstore.js";
 
 export type BotState = "idle" | "running" | "stopping" | "error";
 
@@ -144,6 +145,27 @@ export class Bot {
 
     if (resp.notifications && Array.isArray(resp.notifications) && resp.notifications.length > 0) {
       logNotifications(resp.notifications);
+
+      // Parse pirate attack notifications — log to activity log and record sighting.
+      // This fires for ALL routines so every bot surfaces pirate encounters.
+      for (const notif of resp.notifications) {
+        if (typeof notif !== "object" || !notif) continue;
+        const n = notif as Record<string, unknown>;
+        if (!n.pirate_id && !n.pirate_name) continue;
+
+        const pirateName = (n.pirate_name as string) || "Unknown Pirate";
+        const pirateId = (n.pirate_id as string) || "";
+        const tier = (n.pirate_tier as string) || "";
+        const damage = (n.damage as number) ?? 0;
+        const hull = (n.your_hull as number);
+        const maxHull = (n.your_max_hull as number);
+
+        this.log("combat", `⚔ Under attack from ${pirateName}${tier ? ` (${tier})` : ""}! Took ${damage} damage. Hull: ${hull}/${maxHull}`);
+
+        if (this.system) {
+          mapStore.recordPirate(this.system, { player_id: pirateId || undefined, name: pirateName });
+        }
+      }
     }
 
     if (resp.error) {

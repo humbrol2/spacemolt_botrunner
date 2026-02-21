@@ -468,6 +468,11 @@ class MapStore {
     return this.data.systems[id] ?? null;
   }
 
+  /** Return all stored system IDs. */
+  getAllSystemIds(): string[] {
+    return Object.keys(this.data.systems);
+  }
+
   /** Find nearest station POI within a known system. */
   findNearestStation(systemId: string): StoredPOI | null {
     const sys = this.data.systems[systemId];

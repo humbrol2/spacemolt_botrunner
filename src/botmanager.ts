@@ -6,6 +6,7 @@ import { minerRoutine } from "./routines/miner.js";
 import { explorerRoutine } from "./routines/explorer.js";
 import { crafterRoutine } from "./routines/crafter.js";
 import { rescueRoutine } from "./routines/rescue.js";
+import { hunterRoutine } from "./routines/hunter.js";
 import { mapStore } from "./mapstore.js";
 import { WebServer, type WebAction, type WebActionResult } from "./web/server.js";
 import { setLogSink } from "./ui.js";
@@ -22,6 +23,7 @@ const ROUTINES: Record<string, { name: string; fn: Routine }> = {
   explorer: { name: "Explorer", fn: explorerRoutine },
   crafter: { name: "Crafter", fn: crafterRoutine },
   rescue: { name: "FuelRescue", fn: rescueRoutine },
+  hunter: { name: "PirateHunter", fn: hunterRoutine },
 };
 
 // ── Auto-discover existing sessions ─────────────────────────
