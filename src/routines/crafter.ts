@@ -212,6 +212,187 @@ function hasMaterialsAnywhere(ctx: RoutineContext, recipe: Recipe): boolean {
   return true;
 }
 
+/** Build a lookup: output_item_id → Recipe, so we can find what recipe produces a given item. */
+function buildRecipeIndex(recipes: Recipe[]): Map<string, Recipe> {
+  const index = new Map<string, Recipe>();
+  for (const r of recipes) {
+    if (r.output_item_id) {
+      index.set(r.output_item_id, r);
+    }
+  }
+  return index;
+}
+
+/**
+ * Attempt to craft prerequisite materials that a recipe needs.
+ * For each missing component, check if there's a recipe to produce it,
+ * and if raw materials are available, craft it first.
+ * Returns list of items crafted (for logging). Max 2 levels of recursion.
+ */
+async function craftPrerequisites(
+  ctx: RoutineContext,
+  recipe: Recipe,
+  recipeIndex: Map<string, Recipe>,
+  depth: number = 0,
+): Promise<string[]> {
+  if (depth > 2) return []; // prevent infinite recursion
+  const { bot } = ctx;
+  const crafted: string[] = [];
+
+  for (const comp of recipe.components) {
+    const totalAvailable = countItem(ctx, comp.item_id);
+    if (totalAvailable >= comp.quantity) continue; // have enough
+
+    const deficit = comp.quantity - totalAvailable;
+    const prereqRecipe = recipeIndex.get(comp.item_id);
+    if (!prereqRecipe) continue; // no recipe to craft this item
+
+    // How many batches do we need? (each batch produces output_quantity)
+    const batchesNeeded = Math.ceil(deficit / (prereqRecipe.output_quantity || 1));
+
+    // Recursively craft sub-prerequisites first
+    const subCrafted = await craftPrerequisites(ctx, prereqRecipe, recipeIndex, depth + 1);
+    crafted.push(...subCrafted);
+
+    // Refresh inventories after sub-crafting
+    await bot.refreshCargo();
+    if (bot.docked) {
+      await bot.refreshStorage();
+      await bot.refreshFactionStorage();
+    }
+
+    // Check if we can craft the prerequisite now
+    if (!hasMaterialsAnywhere(ctx, prereqRecipe)) continue;
+
+    // Withdraw materials for the prerequisite
+    // First deposit any crafted items in cargo to make space
+    for (const item of bot.inventory) {
+      if (item.quantity <= 0) continue;
+      const lower = item.itemId.toLowerCase();
+      if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+      // Don't deposit items we need as components for this prereq
+      if (prereqRecipe.components.some(c => c.item_id === item.itemId)) continue;
+      const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      if (dResp.error) {
+        await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      }
+    }
+    await bot.refreshCargo();
+
+    await withdrawFactionMaterials(ctx, prereqRecipe);
+    await withdrawStorageMaterials(ctx, prereqRecipe);
+
+    const stillMissing = getMissingMaterial(ctx, prereqRecipe);
+    if (stillMissing) continue; // can't get all materials into cargo
+
+    // Craft the prerequisite
+    for (let batch = 0; batch < batchesNeeded && bot.state === "running"; batch++) {
+      const craftResp = await bot.exec("craft", { recipe_id: prereqRecipe.recipe_id, count: 1 });
+      if (craftResp.error) break;
+
+      const result = craftResp.result as Record<string, unknown> | undefined;
+      const qty = (result?.count as number) || (result?.quantity as number) || (prereqRecipe.output_quantity || 1);
+      crafted.push(`${qty}x ${prereqRecipe.output_name || prereqRecipe.name}`);
+      bot.stats.totalCrafted += qty;
+
+      // Refresh after each craft to update inventory counts
+      await bot.refreshCargo();
+      if (bot.docked) {
+        await bot.refreshStorage();
+        await bot.refreshFactionStorage();
+      }
+
+      // Re-check if we still need more
+      const newTotal = countItem(ctx, comp.item_id);
+      if (newTotal >= comp.quantity) break;
+
+      // Check if we still have materials for another batch
+      const prereqMissing = getMissingMaterial(ctx, prereqRecipe);
+      if (prereqMissing) {
+        // Try to withdraw more materials
+        await withdrawFactionMaterials(ctx, prereqRecipe);
+        await withdrawStorageMaterials(ctx, prereqRecipe);
+        if (getMissingMaterial(ctx, prereqRecipe)) break;
+      }
+    }
+  }
+
+  return crafted;
+}
+
+/**
+ * Grind crafting XP by crafting the simplest recipes we have materials for.
+ * Tries up to 5 crafts of the cheapest available recipe to level up skill.
+ * Returns list of items crafted for logging.
+ */
+async function grindCraftingXP(
+  ctx: RoutineContext,
+  recipes: Recipe[],
+  recipeIndex: Map<string, Recipe>,
+): Promise<string[]> {
+  const { bot } = ctx;
+  const crafted: string[] = [];
+
+  // Find recipes we can actually craft right now (have materials, not skill-blocked)
+  // Prefer recipes with fewest/cheapest components (basic refining)
+  const candidates: Array<{ recipe: Recipe; complexity: number }> = [];
+
+  for (const recipe of recipes) {
+    if (!hasMaterialsAnywhere(ctx, recipe)) continue;
+    // Complexity = total number of component items needed
+    const complexity = recipe.components.reduce((sum, c) => sum + c.quantity, 0);
+    candidates.push({ recipe, complexity });
+  }
+
+  if (candidates.length === 0) return crafted;
+
+  // Sort by complexity (simplest first — basic refining recipes)
+  candidates.sort((a, b) => a.complexity - b.complexity);
+
+  // Try the simplest recipe
+  const target = candidates[0].recipe;
+  ctx.log("craft", `Grinding XP: crafting ${target.name} (${target.components.map(c => `${c.quantity}x ${c.name}`).join(", ")})...`);
+
+  // Deposit non-essential cargo to make space
+  for (const item of bot.inventory) {
+    if (item.quantity <= 0) continue;
+    const lower = item.itemId.toLowerCase();
+    if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+    if (target.components.some(c => c.item_id === item.itemId)) continue;
+    const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    if (dResp.error) {
+      await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    }
+  }
+  await bot.refreshCargo();
+
+  const MAX_XP_CRAFTS = 5;
+  for (let i = 0; i < MAX_XP_CRAFTS && bot.state === "running"; i++) {
+    await bot.refreshCargo();
+    if (bot.docked) {
+      await bot.refreshStorage();
+      await bot.refreshFactionStorage();
+    }
+
+    if (!hasMaterialsAnywhere(ctx, target)) break;
+
+    await withdrawFactionMaterials(ctx, target);
+    await withdrawStorageMaterials(ctx, target);
+
+    if (getMissingMaterial(ctx, target)) break;
+
+    const craftResp = await bot.exec("craft", { recipe_id: target.recipe_id, count: 1 });
+    if (craftResp.error) break;
+
+    const result = craftResp.result as Record<string, unknown> | undefined;
+    const qty = (result?.count as number) || (result?.quantity as number) || (target.output_quantity || 1);
+    crafted.push(`${qty}x ${target.output_name || target.name}`);
+    bot.stats.totalCrafted += qty;
+  }
+
+  return crafted;
+}
+
 // ── Crafter routine ──────────────────────────────────────────
 
 /**
@@ -278,10 +459,15 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       await bot.refreshFactionStorage();
     }
 
+    // ── Build recipe index for prerequisite lookup ──
+    const recipeIndex = buildRecipeIndex(recipes);
+
     // ── Process each configured limit ──
     let totalCrafted = 0;
     const craftedSummary: string[] = [];   // "5x Fuel Cells"
+    const prereqSummary: string[] = [];    // "3x Refined Alloy (prereq)"
     const missingSummary: string[] = [];   // "Armor Plate (2x refined_titanium)"
+    const skillSummary: string[] = [];     // "Solarian Composite (skill too low, crafted 5x Refined Iron for XP)"
     const atLimitCount = { count: 0 };
 
     for (const { recipeId, limit } of settings.craftLimits) {
@@ -312,6 +498,7 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
 
       // Craft in batches
       let crafted = 0;
+      let hitSkillBlock = false;
       while (crafted < needed && bot.state === "running") {
         await bot.refreshCargo();
         if (bot.docked) {
@@ -327,12 +514,40 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
             await withdrawStorageMaterials(ctx, recipe);
             const stillMissing = getMissingMaterial(ctx, recipe);
             if (stillMissing) {
-              missingSummary.push(`${recipe.name} (${stillMissing.need}x ${stillMissing.name})`);
-              break;
+              // Try crafting the missing prerequisites
+              const preCrafted = await craftPrerequisites(ctx, recipe, recipeIndex);
+              if (preCrafted.length > 0) {
+                prereqSummary.push(...preCrafted);
+                // Refresh and re-withdraw after crafting prereqs
+                await bot.refreshCargo();
+                if (bot.docked) { await bot.refreshStorage(); await bot.refreshFactionStorage(); }
+                await withdrawFactionMaterials(ctx, recipe);
+                await withdrawStorageMaterials(ctx, recipe);
+              }
+              const finalMissing = getMissingMaterial(ctx, recipe);
+              if (finalMissing) {
+                missingSummary.push(`${recipe.name} (${finalMissing.need}x ${finalMissing.name})`);
+                break;
+              }
             }
           } else {
-            missingSummary.push(`${recipe.name} (${missing.need}x ${missing.name})`);
-            break;
+            // Materials don't exist anywhere — try crafting prerequisites
+            const preCrafted = await craftPrerequisites(ctx, recipe, recipeIndex);
+            if (preCrafted.length > 0) {
+              prereqSummary.push(...preCrafted);
+              await bot.refreshCargo();
+              if (bot.docked) { await bot.refreshStorage(); await bot.refreshFactionStorage(); }
+              await withdrawFactionMaterials(ctx, recipe);
+              await withdrawStorageMaterials(ctx, recipe);
+              const finalMissing = getMissingMaterial(ctx, recipe);
+              if (finalMissing) {
+                missingSummary.push(`${recipe.name} (${finalMissing.need}x ${finalMissing.name})`);
+                break;
+              }
+            } else {
+              missingSummary.push(`${recipe.name} (${missing.need}x ${missing.name})`);
+              break;
+            }
           }
         }
 
@@ -345,7 +560,7 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
         if (craftResp.error) {
           const msg = craftResp.error.message.toLowerCase();
           if (msg.includes("skill")) {
-            missingSummary.push(`${recipe.name} (skill too low)`);
+            hitSkillBlock = true;
           } else if (msg.includes("material") || msg.includes("component") || msg.includes("insufficient")) {
             missingSummary.push(`${recipe.name} (no materials)`);
           } else {
@@ -364,13 +579,25 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       if (crafted > 0) {
         craftedSummary.push(`${crafted}x ${recipe.name}`);
       }
+
+      // ── Skill too low: try grinding XP on craftable recipes ──
+      if (hitSkillBlock && bot.state === "running") {
+        const xpCrafted = await grindCraftingXP(ctx, recipes, recipeIndex);
+        if (xpCrafted.length > 0) {
+          skillSummary.push(`${recipe.name} (skill too low, ground ${xpCrafted.join(", ")} for XP)`);
+        } else {
+          skillSummary.push(`${recipe.name} (skill too low, no XP recipes available)`);
+        }
+      }
     }
 
     // ── Single summary line ──
     const parts: string[] = [];
     if (craftedSummary.length > 0) parts.push(`Crafted ${craftedSummary.join(", ")}`);
+    if (prereqSummary.length > 0) parts.push(`Prereqs: ${prereqSummary.join(", ")}`);
     if (atLimitCount.count > 0) parts.push(`${atLimitCount.count} at limit`);
-    if (missingSummary.length > 0) parts.push(`Missing materials: ${missingSummary.join(", ")}`);
+    if (skillSummary.length > 0) parts.push(`Skill: ${skillSummary.join(", ")}`);
+    if (missingSummary.length > 0) parts.push(`Missing: ${missingSummary.join(", ")}`);
     if (parts.length > 0) {
       ctx.log("craft", parts.join(". "));
     } else {
