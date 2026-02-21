@@ -171,140 +171,151 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
-    const route = routes[0];
-    ctx.log("trade", `Best route: ${route.itemName} — buy ${route.buyQty}x at ${route.sourcePoiName} (${route.buyPrice}cr) → sell at ${route.destPoiName} (${route.sellPrice}cr) — est. profit ${Math.round(route.totalProfit)}cr (${route.jumps} jumps)`);
+    // Try up to 3 routes — skip stale/unavailable ones
+    const MAX_ROUTE_ATTEMPTS = 3;
+    let route: TradeRoute | null = null;
+    let buyQty = 0;
+    let investedCredits = 0;
 
-    // ── Phase 1: Travel to source station and buy ──
-    yield "travel_to_source";
+    for (let ri = 0; ri < Math.min(routes.length, MAX_ROUTE_ATTEMPTS); ri++) {
+      if (bot.state !== "running") break;
+      const candidate = routes[ri];
+      ctx.log("trade", `Route #${ri + 1}: ${candidate.itemName} — buy ${candidate.buyQty}x at ${candidate.sourcePoiName} (${candidate.buyPrice}cr) → sell at ${candidate.destPoiName} (${candidate.sellPrice}cr) — est. profit ${Math.round(candidate.totalProfit)}cr (${candidate.jumps} jumps)`);
 
-    // Navigate to source system if needed
-    if (bot.system !== route.sourceSystem) {
-      await ensureUndocked(ctx);
-      const fueled = await ensureFueled(ctx, safetyOpts.fuelThresholdPct);
-      if (!fueled) {
-        ctx.log("error", "Cannot refuel for trade run — waiting 30s");
-        await sleep(30000);
-        continue;
-      }
+      // ── Travel to source station ──
+      yield "travel_to_source";
 
-      ctx.log("travel", `Heading to ${route.sourcePoiName} in ${route.sourceSystem}...`);
-      const arrived = await navigateToSystem(ctx, route.sourceSystem, safetyOpts);
-      if (!arrived) {
-        ctx.log("error", "Failed to reach source system — trying next route");
-        continue;
-      }
-    }
-
-    // Travel to source POI and dock
-    await ensureUndocked(ctx);
-    if (bot.poi !== route.sourcePoi) {
-      ctx.log("travel", `Traveling to ${route.sourcePoiName}...`);
-      const tResp = await bot.exec("travel", { target_poi: route.sourcePoi });
-      if (tResp.error && !tResp.error.message.includes("already")) {
-        ctx.log("error", `Travel to source failed: ${tResp.error.message}`);
-        continue;
-      }
-      bot.poi = route.sourcePoi;
-    }
-
-    // Dock at source
-    yield "dock_source";
-    const dResp = await bot.exec("dock");
-    if (dResp.error && !dResp.error.message.includes("already")) {
-      ctx.log("error", `Dock failed at source: ${dResp.error.message}`);
-      continue;
-    }
-    bot.docked = true;
-
-    // Withdraw only credits from storage (don't pull items — we need cargo space for trade goods)
-    const storageResp = await bot.exec("view_storage");
-    if (storageResp.result && typeof storageResp.result === "object") {
-      const sr = storageResp.result as Record<string, unknown>;
-      const storedCredits = (sr.credits as number) || (sr.stored_credits as number) || 0;
-      if (storedCredits > 0) {
-        await bot.exec("withdraw_credits", { amount: storedCredits });
-        ctx.log("trade", `Withdrew ${storedCredits} credits from storage`);
-      }
-    }
-
-    // Record fresh market data at source
-    await recordMarketData(ctx);
-
-    // Clear cargo: keep 3 fuel cells, deposit everything else to storage
-    const RESERVE_FUEL_CELLS = 3;
-    await bot.refreshCargo();
-    const depositSummary: string[] = [];
-    for (const item of bot.inventory) {
-      const lower = item.itemId.toLowerCase();
-      const isFuel = lower.includes("fuel") || lower.includes("energy_cell");
-      if (isFuel) {
-        const excess = item.quantity - RESERVE_FUEL_CELLS;
-        if (excess > 0) {
-          await bot.exec("deposit_items", { item_id: item.itemId, quantity: excess });
-          depositSummary.push(`${excess}x ${item.name}`);
+      if (bot.system !== candidate.sourceSystem) {
+        await ensureUndocked(ctx);
+        const fueled = await ensureFueled(ctx, safetyOpts.fuelThresholdPct);
+        if (!fueled) {
+          ctx.log("error", "Cannot refuel for trade run — waiting 30s");
+          await sleep(30000);
+          break;
         }
-      } else {
-        await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
-        depositSummary.push(`${item.quantity}x ${item.name}`);
-      }
-    }
-    if (depositSummary.length > 0) {
-      ctx.log("trade", `Cleared cargo: ${depositSummary.join(", ")}`);
-    }
 
-    // Ensure we have at least RESERVE_FUEL_CELLS fuel cells (buy if needed)
-    await bot.refreshCargo();
-    let fuelInCargo = 0;
-    for (const item of bot.inventory) {
-      const lower = item.itemId.toLowerCase();
-      if (lower.includes("fuel") || lower.includes("energy_cell")) fuelInCargo += item.quantity;
-    }
-    if (fuelInCargo < RESERVE_FUEL_CELLS) {
-      const needed = RESERVE_FUEL_CELLS - fuelInCargo;
-      ctx.log("trade", `Buying ${needed} fuel cells for emergency reserve...`);
-      await bot.exec("buy", { item_id: "fuel_cell", quantity: needed });
-    }
-
-    // Determine how much we can buy (limited by cargo space and available credits)
-    await bot.refreshStatus();
-    const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
-    let buyQty = Math.min(route.buyQty, freeSpace);
-    if (settings.maxCargoValue > 0) {
-      const maxByValue = Math.floor(settings.maxCargoValue / route.buyPrice);
-      buyQty = Math.min(buyQty, maxByValue);
-    }
-    const maxByCredits = Math.floor(bot.credits / route.buyPrice);
-    buyQty = Math.min(buyQty, maxByCredits);
-
-    if (buyQty <= 0) {
-      ctx.log("trade", "Cannot afford any items or cargo full — skipping route");
-      continue;
-    }
-
-    // Buy items
-    yield "buy";
-    ctx.log("trade", `Buying ${buyQty}x ${route.itemName} at ${route.buyPrice}cr/ea...`);
-    const buyResp = await bot.exec("buy", { item_id: route.itemId, quantity: buyQty });
-    if (buyResp.error) {
-      ctx.log("error", `Buy failed: ${buyResp.error.message}`);
-      // Try with a smaller quantity
-      if (buyQty > 1) {
-        const halfQty = Math.floor(buyQty / 2);
-        ctx.log("trade", `Retrying with ${halfQty}x...`);
-        const retryResp = await bot.exec("buy", { item_id: route.itemId, quantity: halfQty });
-        if (retryResp.error) {
-          ctx.log("error", `Retry failed: ${retryResp.error.message} — skipping route`);
+        ctx.log("travel", `Heading to ${candidate.sourcePoiName} in ${candidate.sourceSystem}...`);
+        const arrived = await navigateToSystem(ctx, candidate.sourceSystem, safetyOpts);
+        if (!arrived) {
+          ctx.log("error", "Failed to reach source system — trying next route");
           continue;
         }
-        buyQty = halfQty;
-      } else {
+      }
+
+      await ensureUndocked(ctx);
+      if (bot.poi !== candidate.sourcePoi) {
+        ctx.log("travel", `Traveling to ${candidate.sourcePoiName}...`);
+        const tResp = await bot.exec("travel", { target_poi: candidate.sourcePoi });
+        if (tResp.error && !tResp.error.message.includes("already")) {
+          ctx.log("error", `Travel to source failed: ${tResp.error.message}`);
+          continue;
+        }
+        bot.poi = candidate.sourcePoi;
+      }
+
+      // Dock at source
+      yield "dock_source";
+      const dResp = await bot.exec("dock");
+      if (dResp.error && !dResp.error.message.includes("already")) {
+        ctx.log("error", `Dock failed at source: ${dResp.error.message}`);
         continue;
       }
+      bot.docked = true;
+
+      // Withdraw only credits from storage (don't pull items — we need cargo space)
+      const storageResp = await bot.exec("view_storage");
+      if (storageResp.result && typeof storageResp.result === "object") {
+        const sr = storageResp.result as Record<string, unknown>;
+        const storedCredits = (sr.credits as number) || (sr.stored_credits as number) || 0;
+        if (storedCredits > 0) {
+          await bot.exec("withdraw_credits", { amount: storedCredits });
+          ctx.log("trade", `Withdrew ${storedCredits} credits from storage`);
+        }
+      }
+
+      // Record fresh market data at source
+      await recordMarketData(ctx);
+
+      // Verify item is actually available via estimate_purchase
+      yield "verify_availability";
+      const estResp = await bot.exec("estimate_purchase", { item_id: candidate.itemId, quantity: 1 });
+      if (estResp.error) {
+        ctx.log("trade", `${candidate.itemName} not available at ${candidate.sourcePoiName} (stale data) — trying next route`);
+        continue;
+      }
+
+      // Clear cargo: keep 3 fuel cells, deposit everything else
+      const RESERVE_FUEL_CELLS = 3;
+      await bot.refreshCargo();
+      const depositSummary: string[] = [];
+      for (const item of bot.inventory) {
+        const lower = item.itemId.toLowerCase();
+        const isFuel = lower.includes("fuel") || lower.includes("energy_cell");
+        if (isFuel) {
+          const excess = item.quantity - RESERVE_FUEL_CELLS;
+          if (excess > 0) {
+            await bot.exec("deposit_items", { item_id: item.itemId, quantity: excess });
+            depositSummary.push(`${excess}x ${item.name}`);
+          }
+        } else {
+          await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+          depositSummary.push(`${item.quantity}x ${item.name}`);
+        }
+      }
+      if (depositSummary.length > 0) {
+        ctx.log("trade", `Cleared cargo: ${depositSummary.join(", ")}`);
+      }
+
+      // Ensure we have at least RESERVE_FUEL_CELLS fuel cells
+      await bot.refreshCargo();
+      let fuelInCargo = 0;
+      for (const item of bot.inventory) {
+        const lower = item.itemId.toLowerCase();
+        if (lower.includes("fuel") || lower.includes("energy_cell")) fuelInCargo += item.quantity;
+      }
+      if (fuelInCargo < RESERVE_FUEL_CELLS) {
+        const needed = RESERVE_FUEL_CELLS - fuelInCargo;
+        ctx.log("trade", `Buying ${needed} fuel cells for emergency reserve...`);
+        await bot.exec("buy", { item_id: "fuel_cell", quantity: needed });
+      }
+
+      // Determine buy quantity
+      await bot.refreshStatus();
+      const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
+      let qty = Math.min(candidate.buyQty, freeSpace);
+      if (settings.maxCargoValue > 0) {
+        qty = Math.min(qty, Math.floor(settings.maxCargoValue / candidate.buyPrice));
+      }
+      qty = Math.min(qty, Math.floor(bot.credits / candidate.buyPrice));
+
+      if (qty <= 0) {
+        ctx.log("trade", "Cannot afford any items or cargo full — trying next route");
+        continue;
+      }
+
+      // Buy items
+      yield "buy";
+      ctx.log("trade", `Buying ${qty}x ${candidate.itemName} at ${candidate.buyPrice}cr/ea...`);
+      const buyResp = await bot.exec("buy", { item_id: candidate.itemId, quantity: qty });
+      if (buyResp.error) {
+        ctx.log("error", `Buy failed: ${buyResp.error.message} — trying next route`);
+        continue;
+      }
+
+      await bot.refreshStatus();
+      route = candidate;
+      buyQty = qty;
+      investedCredits = qty * candidate.buyPrice;
+      ctx.log("trade", `Purchased ${buyQty}x ${candidate.itemName} for ${investedCredits}cr`);
+      break;
     }
 
-    await bot.refreshStatus();
-    const investedCredits = buyQty * route.buyPrice;
-    ctx.log("trade", `Purchased ${buyQty}x ${route.itemName} for ${investedCredits}cr`);
+    // No route worked — wait and retry
+    if (!route || buyQty <= 0) {
+      ctx.log("trade", "All routes failed — waiting 60s before re-scanning");
+      await sleep(60000);
+      continue;
+    }
 
     // ── Phase 2: Travel to destination and sell ──
     yield "travel_to_dest";
