@@ -33,6 +33,98 @@ const STATION_REFRESH_MINS = 30;
 /** Minutes before a resource POI should be re-sampled. */
 const RESOURCE_REFRESH_MINS = 120;
 
+const EXPLORER_MISSION_KEYWORDS = [
+  "explore", "survey", "visit", "map", "discover", "scan",
+  "sector", "cartography", "route", "recon", "patrol", "system",
+];
+
+/**
+ * Accept available exploration/survey missions at the current station.
+ * Respects the 5-mission cap. Non-exploration missions are skipped.
+ */
+async function checkAndAcceptMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  const activeResp = await bot.exec("get_active_missions");
+  let activeCount = 0;
+  if (activeResp.result && typeof activeResp.result === "object") {
+    const r = activeResp.result as Record<string, unknown>;
+    const list = Array.isArray(r) ? r : Array.isArray(r.missions) ? r.missions : [];
+    activeCount = (list as unknown[]).length;
+  }
+
+  if (activeCount >= 5) return;
+
+  const availResp = await bot.exec("get_missions");
+  if (!availResp.result || typeof availResp.result !== "object") return;
+
+  const r = availResp.result as Record<string, unknown>;
+  const available = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions :
+    Array.isArray(r.available) ? r.available :
+    Array.isArray(r.available_missions) ? r.available_missions :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  for (const mission of available) {
+    if (activeCount >= 5) break;
+
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+
+    const name = ((mission.name as string) || "").toLowerCase();
+    const desc = ((mission.description as string) || "").toLowerCase();
+    const type = ((mission.type as string) || "").toLowerCase();
+
+    const isExplorerMission = EXPLORER_MISSION_KEYWORDS.some(kw =>
+      name.includes(kw) || desc.includes(kw) || type.includes(kw)
+    );
+    if (!isExplorerMission) continue;
+
+    const acceptResp = await bot.exec("accept_mission", { mission_id: missionId });
+    if (!acceptResp.error) {
+      activeCount++;
+      ctx.log("info", `Mission accepted: ${(mission.name as string) || missionId} (${activeCount}/5 active)`);
+    }
+  }
+}
+
+/**
+ * Attempt to complete any active missions while docked.
+ * Exploration missions (visit systems, survey sectors) are often completable
+ * after travelling through required systems.
+ */
+async function completeActiveMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  const activeResp = await bot.exec("get_active_missions");
+  if (!activeResp.result || typeof activeResp.result !== "object") return;
+
+  const r = activeResp.result as Record<string, unknown>;
+  const missions = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  if (missions.length === 0) return;
+
+  for (const mission of missions) {
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+
+    const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+    if (!completeResp.error) {
+      const reward = (mission.reward as number) || (mission.reward_credits as number) || 0;
+      ctx.log("trade", `Mission complete: ${(mission.name as string) || missionId}${reward > 0 ? ` (+${reward} credits)` : ""}`);
+      await bot.refreshStatus();
+    }
+  }
+}
+
 /**
  * Explorer routine — systematically maps the galaxy:
  *
@@ -121,7 +213,7 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
     const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
     ctx.log("info", `=== Exploring ${bot.system} | Credits: ${bot.credits} | Fuel: ${fuelPct}% | Cargo: ${bot.cargo}/${bot.cargoMax} ===`);
 
-    const { pois, connections, systemId } = await getSystemInfo(ctx);
+    let { pois, connections, systemId } = await getSystemInfo(ctx);
     if (!systemId) {
       ctx.log("error", "Could not determine current system — waiting 30s");
       await sleep(30000);
@@ -131,6 +223,19 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // Try to capture security level
     await fetchSecurityLevel(ctx, systemId);
+
+    // ── Survey system to reveal hidden deposits and anomalies ──
+    yield "survey_system";
+    const surveyResp = await bot.exec("survey_system");
+    if (!surveyResp.error) {
+      // Re-fetch system info to pick up any newly revealed POIs
+      const { pois: updated } = await getSystemInfo(ctx);
+      if (updated.length > pois.length) {
+        ctx.log("info", `Survey revealed ${updated.length - pois.length} new POI(s) in ${systemId}`);
+        pois = updated;
+      }
+    }
+    // Silently skip survey failures (skill requirement not met, no scanner, etc.)
 
     // ── Classify POIs and determine what needs visiting ──
     const toVisit: Array<{ poi: SystemPOI; reason: string }> = [];
@@ -466,6 +571,14 @@ async function* scanStation(
       ctx.log("info", "No missions available");
     }
   }
+
+  // Accept exploration/survey missions for this station
+  yield `accept_missions_${poi.id}`;
+  await checkAndAcceptMissions(ctx);
+
+  // Complete any active missions whose requirements are now met
+  yield `complete_missions_${poi.id}`;
+  await completeActiveMissions(ctx);
 
   // Refuel
   yield `refuel_${poi.id}`;
