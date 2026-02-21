@@ -632,9 +632,11 @@ export async function safetyCheck(
 
 /**
  * Ensure the bot has adequate fuel. If below threshold:
- * 1. Jettison non-fuel cargo to make room, scavenge nearby fuel cells
- * 2. Try to refuel at a station in the current system
- * 3. If no local station, find the nearest known system with a station and navigate there
+ * 1. Try to refuel at a station in the current system (dock + credit refuel)
+ * 2. If no local station, try using fuel cells already in cargo
+ * 3. If fuel is at 1 or less and no station reachable, jettison cheap cargo to make room,
+ *    then scavenge nearby wrecks for fuel cells
+ * 4. If no local station, find the nearest known system with a station and navigate there
  * Returns true if fuel is now adequate, false if stranded.
  */
 export async function ensureFueled(
@@ -648,71 +650,7 @@ export async function ensureFueled(
 
   ctx.log("system", `Fuel low (${fuelPct}%) — need to refuel (threshold: ${thresholdPct}%)...`);
 
-  // Step 1: If undocked, clear cargo space and try to scavenge fuel cells
-  if (!bot.docked) {
-    // Jettison non-fuel items to make room for fuel cells
-    // Sort: highest quantity first (most common), then lowest value
-    const cargoResp = await bot.exec("get_cargo");
-    if (cargoResp.result && typeof cargoResp.result === "object") {
-      const cResult = cargoResp.result as Record<string, unknown>;
-      const cargoItems = (
-        Array.isArray(cResult) ? cResult :
-        Array.isArray(cResult.items) ? (cResult.items as Array<Record<string, unknown>>) :
-        Array.isArray(cResult.cargo) ? (cResult.cargo as Array<Record<string, unknown>>) :
-        []
-      ).filter((item: Record<string, unknown>) => {
-        const itemId = ((item.item_id as string) || "").toLowerCase();
-        return itemId && !itemId.includes("fuel") && !itemId.includes("energy_cell");
-      });
-
-      // Sort: lowest value first, then highest quantity (jettison cheap bulk first)
-      cargoItems.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
-        const aVal = (a.value as number) ?? (a.price as number) ?? (a.sell_price as number) ?? 0;
-        const bVal = (b.value as number) ?? (b.price as number) ?? (b.sell_price as number) ?? 0;
-        if (aVal !== bVal) return aVal - bVal; // lowest value first
-        const aQty = (a.quantity as number) || 0;
-        const bQty = (b.quantity as number) || 0;
-        return bQty - aQty; // highest quantity first
-      });
-
-      for (const item of cargoItems) {
-        const itemId = (item.item_id as string) || "";
-        const quantity = (item.quantity as number) || 0;
-        if (!itemId || quantity <= 0) continue;
-        const displayName = (item.name as string) || itemId;
-        ctx.log("system", `Jettisoning ${quantity}x ${displayName} to make room for fuel...`);
-        await bot.exec("jettison", { item_id: itemId, quantity });
-      }
-    }
-
-    // Scavenge nearby for fuel cells ONLY (not the stuff we just jettisoned)
-    const looted = await scavengeWrecks(ctx, { fuelOnly: true });
-    if (looted > 0) {
-      // Try refueling from cargo fuel cells
-      const refuelResp = await bot.exec("refuel");
-      if (!refuelResp.error) {
-        await bot.refreshStatus();
-        fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-        if (fuelPct >= thresholdPct) {
-          ctx.log("system", `Scavenged fuel cells — fuel now ${fuelPct}%`);
-          return true;
-        }
-      }
-    }
-
-    // Even without scavenging, try refuel in case we already had fuel cells
-    const refuelResp = await bot.exec("refuel");
-    if (!refuelResp.error) {
-      await bot.refreshStatus();
-      fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-      if (fuelPct >= thresholdPct) {
-        ctx.log("system", `Refueled from cargo — fuel now ${fuelPct}%`);
-        return true;
-      }
-    }
-  }
-
-  // Step 2: Try local station
+  // Step 1: Try local station first — dock and refuel with credits, no cargo loss
   const { pois } = await getSystemInfo(ctx);
   const localStation = findStation(pois);
 
@@ -724,7 +662,70 @@ export async function ensureFueled(
     return await emergencyFuelRecovery(ctx);
   }
 
-  // No local station — find nearest known system with one
+  // Step 2: No local station — try fuel cells already in cargo
+  if (!bot.docked) {
+    const refuelResp = await bot.exec("refuel");
+    if (!refuelResp.error) {
+      await bot.refreshStatus();
+      fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+      if (fuelPct >= thresholdPct) {
+        ctx.log("system", `Refueled from cargo fuel cells — fuel now ${fuelPct}%`);
+        return true;
+      }
+    }
+
+    // Step 3: Nearly out of fuel — jettison cargo to make room and scavenge fuel cells.
+    // Only do this when fuel is at 1 or less; with more fuel the bot can navigate to a station.
+    if (bot.fuel <= 1) {
+      const cargoResp = await bot.exec("get_cargo");
+      if (cargoResp.result && typeof cargoResp.result === "object") {
+        const cResult = cargoResp.result as Record<string, unknown>;
+        const cargoItems = (
+          Array.isArray(cResult) ? cResult :
+          Array.isArray(cResult.items) ? (cResult.items as Array<Record<string, unknown>>) :
+          Array.isArray(cResult.cargo) ? (cResult.cargo as Array<Record<string, unknown>>) :
+          []
+        ).filter((item: Record<string, unknown>) => {
+          const itemId = ((item.item_id as string) || "").toLowerCase();
+          return itemId && !itemId.includes("fuel") && !itemId.includes("energy_cell");
+        });
+
+        // Sort: lowest value first, then highest quantity (jettison cheap bulk first)
+        cargoItems.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+          const aVal = (a.value as number) ?? (a.price as number) ?? (a.sell_price as number) ?? 0;
+          const bVal = (b.value as number) ?? (b.price as number) ?? (b.sell_price as number) ?? 0;
+          if (aVal !== bVal) return aVal - bVal; // lowest value first
+          const aQty = (a.quantity as number) || 0;
+          const bQty = (b.quantity as number) || 0;
+          return bQty - aQty; // highest quantity first
+        });
+
+        for (const item of cargoItems) {
+          const itemId = (item.item_id as string) || "";
+          const quantity = (item.quantity as number) || 0;
+          if (!itemId || quantity <= 0) continue;
+          const displayName = (item.name as string) || itemId;
+          ctx.log("system", `Stranded with 0 fuel — jettisoning ${quantity}x ${displayName} to make room for fuel cells...`);
+          await bot.exec("jettison", { item_id: itemId, quantity });
+        }
+      }
+    }
+
+    const looted = await scavengeWrecks(ctx, { fuelOnly: true });
+    if (looted > 0) {
+      const scavRefuelResp = await bot.exec("refuel");
+      if (!scavRefuelResp.error) {
+        await bot.refreshStatus();
+        fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+        if (fuelPct >= thresholdPct) {
+          ctx.log("system", `Scavenged fuel cells — fuel now ${fuelPct}%`);
+          return true;
+        }
+      }
+    }
+  }
+
+  // Step 4: No local station — find nearest known system with one
   ctx.log("system", "No station in current system — searching known map for nearest station...");
   const nearest = mapStore.findNearestStationSystem(bot.system);
   if (!nearest) {
@@ -953,8 +954,16 @@ export async function navigateToSystem(
       nextSystem = route[1];
       ctx.log("travel", `Route: ${route.length - 1} jump${route.length - 1 !== 1 ? "s" : ""} remaining`);
     } else {
-      ctx.log("travel", `No mapped route — attempting direct jump to ${targetSystemId}`);
-      nextSystem = targetSystemId;
+      ctx.log("travel", `No mapped route — querying server for route to ${targetSystemId}`);
+      const routeResp = await bot.exec("find_route", { target_system: targetSystemId });
+      const routeData = routeResp.result as { found?: boolean; route?: Array<{ system_id: string; name: string }>; total_jumps?: number } | null;
+      if (!routeResp.error && routeData?.found && routeData.route && routeData.route.length > 1) {
+        nextSystem = routeData.route[1].system_id;
+        ctx.log("travel", `Server route: ${routeData.total_jumps} jump${routeData.total_jumps !== 1 ? "s" : ""} — next: ${nextSystem}`);
+      } else {
+        ctx.log("error", `No route to ${targetSystemId} — cannot navigate`);
+        return false;
+      }
     }
 
     // Hull check — repair immediately if <= 40%
