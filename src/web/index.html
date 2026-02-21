@@ -2045,6 +2045,7 @@
         <div class="response-panel">
           <div class="response-header">
             <span>Activity Log</span>
+            <button onclick="loadFullBotLog()">Full Log</button>
             <button onclick="clearActivityLog()">Clear</button>
           </div>
           <div class="response-log" id="botActivityLog"></div>
@@ -3607,6 +3608,38 @@ function renderBotActivityLog() {
     log.appendChild(div);
   }
   log.scrollTop = log.scrollHeight;
+}
+
+/** Load full persistent log from disk for the current profile bot. */
+async function loadFullBotLog() {
+  if (!profileBot) return;
+  const log = document.getElementById('botActivityLog');
+  if (!log) return;
+  try {
+    const resp = await fetch(`/api/logs/${encodeURIComponent(profileBot)}?tail=500`);
+    const data = await resp.json();
+    if (!data.lines || data.lines.length === 0) {
+      log.innerHTML = '<div class="log-entry" style="color:var(--dim)">No persistent log data yet.</div>';
+      return;
+    }
+    log.innerHTML = '';
+    for (const line of data.lines) {
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      // Persistent log format: "YYYY-MM-DD HH:MM:SS [cat] msg" — strip date prefix for display
+      const stripped = line.replace(/^\d{4}-\d{2}-\d{2}\s+/, '');
+      div.innerHTML = formatBotLogLine(stripped);
+      log.appendChild(div);
+    }
+    log.scrollTop = log.scrollHeight;
+    const countNote = document.createElement('div');
+    countNote.className = 'log-entry';
+    countNote.style.color = 'var(--dim)';
+    countNote.textContent = `— Showing ${data.lines.length} of ${data.total} total log entries —`;
+    log.prepend(countNote);
+  } catch (e) {
+    log.innerHTML = `<div class="log-entry" style="color:var(--dim)">Failed to load log: ${e.message}</div>`;
+  }
 }
 
 // Fetch system POIs and connections for travel dropdowns

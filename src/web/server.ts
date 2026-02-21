@@ -213,6 +213,20 @@ export class WebServer {
           return Response.json(catalogStore.getAll());
         }
 
+        // Per-bot persistent log files
+        if (url.pathname.startsWith("/api/logs/")) {
+          const botName = decodeURIComponent(url.pathname.slice("/api/logs/".length));
+          const tail = parseInt(url.searchParams.get("tail") || "200");
+          const logPath = join(process.cwd(), "data", "logs", `${botName}.log`);
+          if (!existsSync(logPath)) {
+            return Response.json({ lines: [] });
+          }
+          const content = readFileSync(logPath, "utf-8");
+          const allLines = content.split("\n").filter(l => l);
+          const lines = allLines.slice(-tail);
+          return Response.json({ lines, total: allLines.length });
+        }
+
         // POST actions (fallback for non-WS clients)
         if (url.pathname === "/api/action" && req.method === "POST") {
           const action = (await req.json()) as WebAction;

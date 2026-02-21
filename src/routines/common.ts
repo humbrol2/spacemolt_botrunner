@@ -346,23 +346,33 @@ export async function transferStationToFaction(ctx: RoutineContext): Promise<voi
   await bot.refreshStorage();
   if (bot.storage.length === 0) return;
 
+  await bot.refreshStatus();
   const transferred: string[] = [];
+
   for (const item of bot.storage) {
     if (item.quantity <= 0) continue;
 
+    // Check available cargo space — items pass through cargo as intermediary
+    const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 0;
+    if (freeSpace <= 0) break; // cargo full, can't transfer any more
+
+    const qty = Math.min(item.quantity, freeSpace);
+
     // Withdraw from station storage into cargo
-    const wResp = await bot.exec("withdraw_items", { item_id: item.itemId, quantity: item.quantity });
+    const wResp = await bot.exec("withdraw_items", { item_id: item.itemId, quantity: qty });
     if (wResp.error) continue;
 
     // Deposit into faction storage
-    const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: qty });
     if (!dResp.error) {
-      transferred.push(`${item.quantity}x ${item.name}`);
-      logFactionActivity(ctx, "deposit", `Transferred ${item.quantity}x ${item.name} from station → faction storage`);
+      transferred.push(`${qty}x ${item.name}`);
+      logFactionActivity(ctx, "deposit", `Transferred ${qty}x ${item.name} from station → faction storage`);
     } else {
       // Failed to deposit to faction — put back in station storage
-      await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+      await bot.exec("deposit_items", { item_id: item.itemId, quantity: qty });
     }
+
+    await bot.refreshStatus(); // update cargo count for next iteration
   }
 
   if (transferred.length > 0) {

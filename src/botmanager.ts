@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "fs";
+import { existsSync, readdirSync, appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { Bot, type Routine } from "./bot.js";
 import { SessionManager } from "./session.js";
@@ -58,9 +58,20 @@ function discoverBots(): void {
 /** Categories that go to the broadcast panel instead of bot log. */
 const BROADCAST_CATEGORIES = new Set(["broadcast", "chat", "dm"]);
 
+const LOGS_DIR = join(BASE_DIR, "data", "logs");
+
+/** Append a line to a bot's persistent log file (data/logs/{username}.log). */
+function appendBotLog(username: string, line: string): void {
+  try {
+    if (!existsSync(LOGS_DIR)) mkdirSync(LOGS_DIR, { recursive: true });
+    appendFileSync(join(LOGS_DIR, `${username}.log`), line + "\n");
+  } catch { /* ignore write errors */ }
+}
+
 function setupBotLogging(bot: Bot): void {
   bot.onLog = (username, category, message) => {
     const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const datestamp = new Date().toISOString().slice(0, 10);
     const line = `${timestamp} [${username}] [${category}] ${message}`;
     debugLog("bot:onLog", `${username} cat=${category}`, message);
     if (category === "system" || category === "error") {
@@ -70,6 +81,8 @@ function setupBotLogging(bot: Bot): void {
     // Per-bot log for profile page activity log
     const botLine = `${timestamp} [${category}] ${message}`;
     server.logBot(username, botLine);
+    // Persistent per-bot log file
+    appendBotLog(username, `${datestamp} ${botLine}`);
   };
   bot.onFactionLog = (_username, line) => {
     server.logFaction(line);
