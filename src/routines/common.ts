@@ -314,71 +314,63 @@ export async function collectFromStorage(ctx: RoutineContext): Promise<void> {
 
   const r = storageResp.result as Record<string, unknown>;
 
-  // Withdraw credits
+  // Withdraw credits to the bot
   const credits = (r.credits as number) || (r.stored_credits as number) || 0;
   if (credits > 0) {
     const wResp = await bot.exec("withdraw_credits", { amount: credits });
     if (!wResp.error) {
+      ctx.log("trade", `Collected ${credits} credits from storage`);
       await bot.refreshStatus();
     }
   }
 
-  // Withdraw items (fuel cells first, then others if cargo space allows)
-  const storedItems = (
-    Array.isArray(r.items) ? (r.items as Array<Record<string, unknown>>) :
-    Array.isArray(r.stored_items) ? (r.stored_items as Array<Record<string, unknown>>) :
-    Array.isArray(r.inventory) ? (r.inventory as Array<Record<string, unknown>>) :
-    []
-  );
-
-  if (storedItems.length === 0 && credits <= 0) return;
-
-  const withdrawnItems: string[] = [];
-
-  // Sort: fuel cells first (most urgent)
-  const sorted = [...storedItems].sort((a, b) => {
-    const aId = ((a.item_id as string) || "").toLowerCase();
-    const bId = ((b.item_id as string) || "").toLowerCase();
-    const aFuel = aId.includes("fuel") || aId.includes("energy_cell") ? 0 : 1;
-    const bFuel = bId.includes("fuel") || bId.includes("energy_cell") ? 0 : 1;
-    return aFuel - bFuel;
-  });
-
-  await bot.refreshStatus();
-  for (const item of sorted) {
-    const itemId = (item.item_id as string) || (item.id as string) || "";
-    const quantity = (item.quantity as number) || 0;
-    if (!itemId || quantity <= 0) continue;
-
-    const isFuel = itemId.toLowerCase().includes("fuel") || itemId.toLowerCase().includes("energy_cell");
-
-    // Check available cargo space
-    const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : Infinity;
-    if (freeSpace <= 0 && !isFuel) continue; // cargo full — skip non-fuel
-    if (freeSpace <= 0) continue; // even fuel can't fit
-
-    // Limit withdraw quantity to available cargo space
-    const withdrawQty = freeSpace < Infinity ? Math.min(quantity, freeSpace) : quantity;
-    if (withdrawQty <= 0) continue;
-
-    const displayName = (item.name as string) || itemId;
-    const wResp = await bot.exec("withdraw_items", { item_id: itemId, quantity: withdrawQty });
-    if (!wResp.error) {
-      withdrawnItems.push(`${withdrawQty}x ${displayName}`);
-      await bot.refreshStatus();
-    }
-  }
-
-  // Summary line
-  const parts: string[] = [];
-  if (credits > 0) parts.push(`${credits} credits`);
-  if (withdrawnItems.length > 0) parts.push(withdrawnItems.join(", "));
-  if (parts.length > 0) ctx.log("trade", `Collected from storage: ${parts.join(", ")}`);
+  // Transfer all station storage items → faction storage (shared pool)
+  await transferStationToFaction(ctx);
 
   await bot.refreshStatus();
 
   // Record market prices at this station
   await recordMarketData(ctx);
+}
+
+/**
+ * Transfer all items from personal station storage into faction storage.
+ * This centralises materials so any bot (crafters, traders, etc.) can access them.
+ * Credits are kept on the bot (not transferred).
+ * Assumes docked at a station with both storage and faction storage access.
+ */
+export async function transferStationToFaction(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  await bot.refreshStorage();
+  if (bot.storage.length === 0) return;
+
+  const transferred: string[] = [];
+  for (const item of bot.storage) {
+    if (item.quantity <= 0) continue;
+
+    // Withdraw from station storage into cargo
+    const wResp = await bot.exec("withdraw_items", { item_id: item.itemId, quantity: item.quantity });
+    if (wResp.error) continue;
+
+    // Deposit into faction storage
+    const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    if (!dResp.error) {
+      transferred.push(`${item.quantity}x ${item.name}`);
+      logFactionActivity(ctx, "deposit", `Transferred ${item.quantity}x ${item.name} from station → faction storage`);
+    } else {
+      // Failed to deposit to faction — put back in station storage
+      await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    }
+  }
+
+  if (transferred.length > 0) {
+    ctx.log("trade", `Transferred to faction storage: ${transferred.join(", ")}`);
+    await bot.refreshCargo();
+    await bot.refreshStorage();
+    await bot.refreshFactionStorage();
+  }
 }
 
 // ── Refueling ────────────────────────────────────────────────
@@ -904,7 +896,7 @@ export async function depositCargoAtHome(
   return deposited;
 }
 
-/** Deposit all non-fuel cargo to station storage. Assumes docked. Returns true if any items deposited. */
+/** Deposit all non-fuel cargo to faction storage (shared pool). Assumes docked. Returns true if any items deposited. */
 export async function depositNonFuelCargo(ctx: RoutineContext): Promise<boolean> {
   const { bot } = ctx;
   const cargoResp = await bot.exec("get_cargo");
@@ -927,13 +919,19 @@ export async function depositNonFuelCargo(ctx: RoutineContext): Promise<boolean>
     if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
 
     const displayName = (item.name as string) || itemId;
-    ctx.log("trade", `Depositing ${quantity}x ${displayName} to storage...`);
-    await bot.exec("deposit_items", { item_id: itemId, quantity });
+    // Try faction storage first (shared pool), fall back to station storage
+    const fResp = await bot.exec("faction_deposit_items", { item_id: itemId, quantity });
+    if (!fResp.error) {
+      ctx.log("trade", `Deposited ${quantity}x ${displayName} to faction storage`);
+      logFactionActivity(ctx, "deposit", `Deposited ${quantity}x ${displayName} to faction storage`);
+    } else {
+      await bot.exec("deposit_items", { item_id: itemId, quantity });
+      ctx.log("trade", `Deposited ${quantity}x ${displayName} to station storage (faction full/unavailable)`);
+    }
     deposited += quantity;
   }
 
   if (deposited > 0) {
-    ctx.log("trade", `Deposited ${deposited} items at ${HOME_STATION_NAME}`);
     await bot.refreshCargo();
   }
   return deposited > 0;

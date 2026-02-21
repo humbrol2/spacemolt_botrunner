@@ -309,8 +309,8 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
         if (missing) {
           // Materials not in cargo — try pulling from storage sources
           if (hasMaterialsAnywhere(ctx, recipe)) {
-            await withdrawStorageMaterials(ctx, recipe);
             await withdrawFactionMaterials(ctx, recipe);
+            await withdrawStorageMaterials(ctx, recipe);
             const stillMissing = getMissingMaterial(ctx, recipe);
             if (stillMissing) {
               missingSummary.push(`${recipe.name} (${stillMissing.need}x ${stillMissing.name})`);

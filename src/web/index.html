@@ -2643,24 +2643,34 @@ function renderPerBotSettings(bot) {
   const botSettings = settings[bot.username] || {};
   const globalMiner = settings.miner || {};
 
-  // Deposit mode: per-bot > global
-  const depositMode = botSettings.depositMode || globalMiner.depositMode || 'storage';
-  const depositFallback = botSettings.depositFallback || globalMiner.depositFallback || 'storage';
-  const depositBot = botSettings.depositBot || globalMiner.depositBot || '';
+  // Resolve effective primary/secondary from legacy or new fields
+  const primary = botSettings.depositMode === 'gift'
+    ? `bot:${botSettings.depositBot || ''}`
+    : botSettings.depositBot
+      ? `bot:${botSettings.depositBot}`
+      : botSettings.depositMode || '';
+  const secondary = botSettings.depositFallback || '';
+  const globalPrimary = globalMiner.depositMode === 'gift'
+    ? `bot:${globalMiner.depositBot || ''}`
+    : globalMiner.depositBot
+      ? `bot:${globalMiner.depositBot}`
+      : globalMiner.depositMode || 'faction';
 
-  // Build bot recipient options
-  const botOpts = [`<option value=""${!depositBot ? ' selected' : ''}>(none)</option>`];
-  for (const b of bots) {
-    if (b.username === bot.username) continue;
-    const sel = b.username === depositBot ? ' selected' : '';
-    botOpts.push(`<option value="${esc(b.username)}"${sel}>${esc(b.username)}</option>`);
-  }
-
-  function modeOpts(current) {
-    return ['storage', 'faction', 'sell'].map(m => {
-      const labels = { storage: 'Station storage', faction: 'Faction storage', sell: 'Sell at market' };
-      return `<option value="${m}"${m === current ? ' selected' : ''}>${labels[m]}</option>`;
-    }).join('');
+  function depositOpts(current, includeGlobal) {
+    const opts = [];
+    if (includeGlobal) {
+      const globalLabel = globalPrimary.startsWith('bot:') ? globalPrimary.slice(4) : { faction: 'Faction storage', storage: 'Station storage', sell: 'Sell' }[globalPrimary] || globalPrimary;
+      opts.push(`<option value=""${!current ? ' selected' : ''}>(global: ${esc(globalLabel)})</option>`);
+    }
+    opts.push(`<option value="faction"${'faction' === current ? ' selected' : ''}>Faction storage</option>`);
+    opts.push(`<option value="storage"${'storage' === current ? ' selected' : ''}>Station storage</option>`);
+    opts.push(`<option value="sell"${'sell' === current ? ' selected' : ''}>Sell at market</option>`);
+    for (const b of bots) {
+      if (b.username === bot.username) continue;
+      const val = `bot:${b.username}`;
+      opts.push(`<option value="${esc(val)}"${val === current ? ' selected' : ''}>${esc(b.username)}</option>`);
+    }
+    return opts.join('');
   }
 
   return `
@@ -2668,19 +2678,13 @@ function renderPerBotSettings(bot) {
       <div class="profile-card-header">Deposit Settings</div>
       <div class="profile-card-body">
         <div class="stat-grid" style="gap:6px 8px">
-          <span class="sl">Send To</span>
-          <select id="pbs-depositBot" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
-            ${botOpts.join('')}
+          <span class="sl">Primary</span>
+          <select id="pbs-depositPrimary" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
+            ${depositOpts(primary, true)}
           </select>
-          <span class="sl">Deposit Mode</span>
-          <select id="pbs-depositMode" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
-            <option value=""${!botSettings.depositMode ? ' selected' : ''}>(global: ${esc(globalMiner.depositMode || 'storage')})</option>
-            ${modeOpts(botSettings.depositMode || '')}
-          </select>
-          <span class="sl">Fallback</span>
-          <select id="pbs-depositFallback" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
-            <option value=""${!botSettings.depositFallback ? ' selected' : ''}>(global: ${esc(globalMiner.depositFallback || 'storage')})</option>
-            ${modeOpts(botSettings.depositFallback || '')}
+          <span class="sl">Secondary</span>
+          <select id="pbs-depositSecondary" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
+            ${depositOpts(secondary, true)}
           </select>
         </div>
       </div>
@@ -2690,10 +2694,27 @@ function renderPerBotSettings(bot) {
 function savePerBotDepositSettings() {
   const bot = getProfileBot();
   if (!bot) return;
-  const depositBot = document.getElementById('pbs-depositBot')?.value || '';
-  const depositMode = document.getElementById('pbs-depositMode')?.value || '';
-  const depositFallback = document.getElementById('pbs-depositFallback')?.value || '';
+  const primary = document.getElementById('pbs-depositPrimary')?.value || '';
+  const secondary = document.getElementById('pbs-depositSecondary')?.value || '';
   const existing = settings[bot.username] || {};
+
+  // Convert unified value to depositMode + depositBot
+  let depositMode = '', depositBot = '';
+  if (primary.startsWith('bot:')) {
+    depositBot = primary.slice(4);
+    depositMode = 'gift';
+  } else {
+    depositMode = primary;
+    depositBot = '';
+  }
+
+  let depositFallback = '';
+  if (secondary.startsWith('bot:')) {
+    depositFallback = 'gift';
+  } else {
+    depositFallback = secondary;
+  }
+
   const updated = Object.assign({}, existing, { depositBot, depositMode, depositFallback });
   send({ type: 'saveSettings', routine: bot.username, settings: updated });
   settings[bot.username] = updated;
@@ -4505,7 +4526,11 @@ function renderMinerSettings(panel) {
   const cargoThreshold = miner.cargoThreshold ?? 80;
   const refuelThreshold = miner.refuelThreshold ?? 50;
   const repairThreshold = miner.repairThreshold ?? 40;
-  const depositMode = miner.depositMode || (miner.sellOre ? 'sell' : 'storage');
+  const depositMode = miner.depositMode || (miner.sellOre ? 'sell' : 'faction');
+  const depositFallback = miner.depositFallback || 'storage';
+  // Resolve unified primary value
+  const depositPrimary = depositBot ? `bot:${depositBot}` : depositMode;
+  const depositSecondary = depositFallback;
   const targetOre = miner.targetOre || '';
 
   const systemOpts = ['<option value="">(current system)</option>'];
@@ -4527,10 +4552,16 @@ function renderMinerSettings(panel) {
     oreOpts.push(`<option value="${esc(targetOre)}" selected>${esc(targetOre)}</option>`);
   }
 
-  const botOpts = ['<option value="">(none - keep in own cargo)</option>'];
-  for (const bot of bots) {
-    const sel = bot.username === depositBot ? ' selected' : '';
-    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  function minerDepositOpts(current) {
+    const opts = [];
+    opts.push(`<option value="faction"${'faction' === current ? ' selected' : ''}>Faction storage</option>`);
+    opts.push(`<option value="storage"${'storage' === current ? ' selected' : ''}>Station storage</option>`);
+    opts.push(`<option value="sell"${'sell' === current ? ' selected' : ''}>Sell at market</option>`);
+    for (const bot of bots) {
+      const val = `bot:${bot.username}`;
+      opts.push(`<option value="${esc(val)}"${val === current ? ' selected' : ''}>${esc(bot.username)}</option>`);
+    }
+    return opts.join('');
   }
 
   // Per-bot ore overrides
@@ -4580,22 +4611,18 @@ function renderMinerSettings(panel) {
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Send Ore To</div>
-        <div class="setting-hint">Transfer mined ore to another bot's station storage via trade.</div>
+        <div class="setting-label">Primary Deposit</div>
+        <div class="setting-hint">Where to send ore when returning to station.</div>
       </div>
-      <select id="set-miner-depositBot">${botOpts.join('')}</select>
+      <select id="set-miner-depositPrimary">${minerDepositOpts(depositPrimary)}</select>
     </div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Deposit Mode</div>
-        <div class="setting-hint">What to do with ore when returning to station.</div>
+        <div class="setting-label">Secondary Deposit</div>
+        <div class="setting-hint">Fallback if primary fails (e.g. faction storage full).</div>
       </div>
-      <select id="set-miner-depositMode">
-        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
-        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
-        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
-      </select>
+      <select id="set-miner-depositSecondary">${minerDepositOpts(depositSecondary)}</select>
     </div>
 
     <div class="setting-row">
@@ -4632,9 +4659,10 @@ function saveMinerSettings() {
   const s = {
     targetOre: document.getElementById('set-miner-targetOre').value,
     system: document.getElementById('set-miner-system').value,
-    depositBot: document.getElementById('set-miner-depositBot').value,
-    depositMode: document.getElementById('set-miner-depositMode').value,
-    sellOre: document.getElementById('set-miner-depositMode').value === 'sell',
+    depositBot: (function() { const v = document.getElementById('set-miner-depositPrimary').value; return v.startsWith('bot:') ? v.slice(4) : ''; })(),
+    depositMode: (function() { const v = document.getElementById('set-miner-depositPrimary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
+    depositFallback: (function() { const v = document.getElementById('set-miner-depositSecondary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
+    sellOre: document.getElementById('set-miner-depositPrimary').value === 'sell',
     cargoThreshold: parseInt(document.getElementById('set-miner-cargoThreshold').value) || 80,
     refuelThreshold: parseInt(document.getElementById('set-miner-refuelThreshold').value) || 50,
     repairThreshold: parseInt(document.getElementById('set-miner-repairThreshold').value) || 40,
@@ -6936,12 +6964,15 @@ function saveExplorerSettings() {
 
 function renderGasHarvesterSettings(panel) {
   const g = settings.gas_harvester || {};
-  const depositMode = g.depositMode || 'storage';
+  const depositMode = g.depositMode || 'faction';
+  const depositFallback = g.depositFallback || 'storage';
   const cargoThreshold = g.cargoThreshold ?? 80;
   const refuelThreshold = g.refuelThreshold ?? 50;
   const repairThreshold = g.repairThreshold ?? 40;
   const currentSystem = g.system || '';
   const depositBot = g.depositBot || '';
+  const gasPrimary = depositBot ? `bot:${depositBot}` : depositMode;
+  const gasSecondary = depositFallback;
   const targetGas = g.targetGas || '';
 
   const systemOpts = ['<option value="">(current system)</option>'];
@@ -6968,10 +6999,16 @@ function renderGasHarvesterSettings(panel) {
     oreOpts.push(`<option value="${esc(targetGas)}" selected>${esc(targetGas)}</option>`);
   }
 
-  const botOpts = ['<option value="">(none — keep in own cargo)</option>'];
-  for (const bot of bots) {
-    const sel = bot.username === depositBot ? ' selected' : '';
-    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  function gasDepositOpts(current) {
+    const opts = [];
+    opts.push(`<option value="faction"${'faction' === current ? ' selected' : ''}>Faction storage</option>`);
+    opts.push(`<option value="storage"${'storage' === current ? ' selected' : ''}>Station storage</option>`);
+    opts.push(`<option value="sell"${'sell' === current ? ' selected' : ''}>Sell at market</option>`);
+    for (const bot of bots) {
+      const val = `bot:${bot.username}`;
+      opts.push(`<option value="${esc(val)}"${val === current ? ' selected' : ''}>${esc(bot.username)}</option>`);
+    }
+    return opts.join('');
   }
 
   panel.innerHTML = `
@@ -6996,22 +7033,18 @@ function renderGasHarvesterSettings(panel) {
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Send Gas To</div>
-        <div class="setting-hint">Transfer harvested gas to another bot's station storage via trade.</div>
+        <div class="setting-label">Primary Deposit</div>
+        <div class="setting-hint">Where to send harvested gas when returning to station.</div>
       </div>
-      <select id="set-gas-depositBot">${botOpts.join('')}</select>
+      <select id="set-gas-depositPrimary">${gasDepositOpts(gasPrimary)}</select>
     </div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Deposit Mode</div>
-        <div class="setting-hint">What to do with gas when returning to station.</div>
+        <div class="setting-label">Secondary Deposit</div>
+        <div class="setting-hint">Fallback if primary fails.</div>
       </div>
-      <select id="set-gas-depositMode">
-        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
-        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
-        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
-      </select>
+      <select id="set-gas-depositSecondary">${gasDepositOpts(gasSecondary)}</select>
     </div>
 
     <div class="setting-row">
@@ -7048,8 +7081,9 @@ function saveGasHarvesterSettings() {
   const s = {
     targetGas: document.getElementById('set-gas-targetGas').value,
     system: document.getElementById('set-gas-system').value,
-    depositBot: document.getElementById('set-gas-depositBot').value,
-    depositMode: document.getElementById('set-gas-depositMode').value,
+    depositBot: (function() { const v = document.getElementById('set-gas-depositPrimary').value; return v.startsWith('bot:') ? v.slice(4) : ''; })(),
+    depositMode: (function() { const v = document.getElementById('set-gas-depositPrimary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
+    depositFallback: (function() { const v = document.getElementById('set-gas-depositSecondary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
     cargoThreshold: parseInt(document.getElementById('set-gas-cargoThreshold').value) || 80,
     refuelThreshold: parseInt(document.getElementById('set-gas-refuelThreshold').value) || 50,
     repairThreshold: parseInt(document.getElementById('set-gas-repairThreshold').value) || 40,
@@ -7062,12 +7096,15 @@ function saveGasHarvesterSettings() {
 
 function renderIceHarvesterSettings(panel) {
   const ic = settings.ice_harvester || {};
-  const depositMode = ic.depositMode || 'storage';
+  const depositMode = ic.depositMode || 'faction';
+  const depositFallback = ic.depositFallback || 'storage';
   const cargoThreshold = ic.cargoThreshold ?? 80;
   const refuelThreshold = ic.refuelThreshold ?? 50;
   const repairThreshold = ic.repairThreshold ?? 40;
   const currentSystem = ic.system || '';
   const depositBot = ic.depositBot || '';
+  const icePrimary = depositBot ? `bot:${depositBot}` : depositMode;
+  const iceSecondary = depositFallback;
   const targetIce = ic.targetIce || '';
 
   const systemOpts = ['<option value="">(current system)</option>'];
@@ -7094,10 +7131,16 @@ function renderIceHarvesterSettings(panel) {
     oreOpts.push(`<option value="${esc(targetIce)}" selected>${esc(targetIce)}</option>`);
   }
 
-  const botOpts = ['<option value="">(none — keep in own cargo)</option>'];
-  for (const bot of bots) {
-    const sel = bot.username === depositBot ? ' selected' : '';
-    botOpts.push(`<option value="${esc(bot.username)}"${sel}>${esc(bot.username)}</option>`);
+  function iceDepositOpts(current) {
+    const opts = [];
+    opts.push(`<option value="faction"${'faction' === current ? ' selected' : ''}>Faction storage</option>`);
+    opts.push(`<option value="storage"${'storage' === current ? ' selected' : ''}>Station storage</option>`);
+    opts.push(`<option value="sell"${'sell' === current ? ' selected' : ''}>Sell at market</option>`);
+    for (const bot of bots) {
+      const val = `bot:${bot.username}`;
+      opts.push(`<option value="${esc(val)}"${val === current ? ' selected' : ''}>${esc(bot.username)}</option>`);
+    }
+    return opts.join('');
   }
 
   panel.innerHTML = `
@@ -7122,22 +7165,18 @@ function renderIceHarvesterSettings(panel) {
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Send Ice To</div>
-        <div class="setting-hint">Transfer harvested ice to another bot's station storage via trade.</div>
+        <div class="setting-label">Primary Deposit</div>
+        <div class="setting-hint">Where to send harvested ice when returning to station.</div>
       </div>
-      <select id="set-ice-depositBot">${botOpts.join('')}</select>
+      <select id="set-ice-depositPrimary">${iceDepositOpts(icePrimary)}</select>
     </div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Deposit Mode</div>
-        <div class="setting-hint">What to do with ice when returning to station.</div>
+        <div class="setting-label">Secondary Deposit</div>
+        <div class="setting-hint">Fallback if primary fails.</div>
       </div>
-      <select id="set-ice-depositMode">
-        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
-        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
-        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
-      </select>
+      <select id="set-ice-depositSecondary">${iceDepositOpts(iceSecondary)}</select>
     </div>
 
     <div class="setting-row">
@@ -7174,8 +7213,9 @@ function saveIceHarvesterSettings() {
   const s = {
     targetIce: document.getElementById('set-ice-targetIce').value,
     system: document.getElementById('set-ice-system').value,
-    depositBot: document.getElementById('set-ice-depositBot').value,
-    depositMode: document.getElementById('set-ice-depositMode').value,
+    depositBot: (function() { const v = document.getElementById('set-ice-depositPrimary').value; return v.startsWith('bot:') ? v.slice(4) : ''; })(),
+    depositMode: (function() { const v = document.getElementById('set-ice-depositPrimary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
+    depositFallback: (function() { const v = document.getElementById('set-ice-depositSecondary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
     cargoThreshold: parseInt(document.getElementById('set-ice-cargoThreshold').value) || 80,
     refuelThreshold: parseInt(document.getElementById('set-ice-refuelThreshold').value) || 50,
     repairThreshold: parseInt(document.getElementById('set-ice-repairThreshold').value) || 40,
@@ -7189,6 +7229,7 @@ function saveIceHarvesterSettings() {
 function renderSalvagerSettings(panel) {
   const sv = settings.salvager || {};
   const depositMode = sv.depositMode || 'sell';
+  const depositFallback = sv.depositFallback || 'faction';
   const cargoThreshold = sv.cargoThreshold ?? 80;
   const refuelThreshold = sv.refuelThreshold ?? 50;
   const repairThreshold = sv.repairThreshold ?? 40;
@@ -7218,13 +7259,27 @@ function renderSalvagerSettings(panel) {
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Deposit Mode</div>
-        <div class="setting-hint">What to do with salvaged items when returning to station.</div>
+        <div class="setting-label">Primary Deposit</div>
+        <div class="setting-hint">Where to send salvaged items when returning to station.</div>
       </div>
-      <select id="set-salvager-depositMode">
-        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell for credits</option>
-        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Deposit to station storage</option>
-        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Deposit to faction storage</option>
+      <select id="set-salvager-depositPrimary">
+        <option value="sell"${depositMode === 'sell' ? ' selected' : ''}>Sell at market</option>
+        <option value="faction"${depositMode === 'faction' ? ' selected' : ''}>Faction storage</option>
+        <option value="storage"${depositMode === 'storage' ? ' selected' : ''}>Station storage</option>
+        ${bots.map(b => `<option value="bot:${esc(b.username)}"${'bot:' + b.username === depositMode ? ' selected' : ''}>${esc(b.username)}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Secondary Deposit</div>
+        <div class="setting-hint">Fallback if primary fails.</div>
+      </div>
+      <select id="set-salvager-depositSecondary">
+        <option value="faction"${depositFallback === 'faction' ? ' selected' : ''}>Faction storage</option>
+        <option value="storage"${depositFallback === 'storage' ? ' selected' : ''}>Station storage</option>
+        <option value="sell"${depositFallback === 'sell' ? ' selected' : ''}>Sell at market</option>
+        ${bots.map(b => `<option value="bot:${esc(b.username)}"${'bot:' + b.username === depositFallback ? ' selected' : ''}>${esc(b.username)}</option>`).join('')}
       </select>
     </div>
 
@@ -7261,7 +7316,8 @@ function renderSalvagerSettings(panel) {
 function saveSalvagerSettings() {
   const s = {
     system: document.getElementById('set-salvager-system').value,
-    depositMode: document.getElementById('set-salvager-depositMode').value,
+    depositMode: (function() { const v = document.getElementById('set-salvager-depositPrimary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
+    depositFallback: (function() { const v = document.getElementById('set-salvager-depositSecondary').value; return v.startsWith('bot:') ? 'gift' : v; })(),
     cargoThreshold: parseInt(document.getElementById('set-salvager-cargoThreshold').value) || 80,
     refuelThreshold: parseInt(document.getElementById('set-salvager-refuelThreshold').value) || 50,
     repairThreshold: parseInt(document.getElementById('set-salvager-repairThreshold').value) || 40,

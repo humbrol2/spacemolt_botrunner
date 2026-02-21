@@ -128,6 +128,100 @@ function findTradeOpportunities(settings: ReturnType<typeof getTraderSettings>, 
   return routes;
 }
 
+/** Find the cheapest known market sell price for an item (replacement/acquisition cost). */
+function getItemMarketCost(itemId: string): number {
+  let cheapest = Infinity;
+  const systems = mapStore.getAllSystems();
+  for (const sys of Object.values(systems)) {
+    for (const poi of sys.pois) {
+      for (const m of poi.market) {
+        if (m.item_id === itemId && m.best_sell !== null && m.best_sell > 0) {
+          if (m.best_sell < cheapest) cheapest = m.best_sell;
+        }
+      }
+    }
+  }
+  return cheapest === Infinity ? 0 : cheapest;
+}
+
+/**
+ * Find profitable routes for items already in faction storage.
+ * Uses the cheapest known market price as cost basis — profit is
+ * sellPrice - materialCost - fuelCost. The trader withdraws from
+ * faction storage at its current station, then travels to sell.
+ */
+function findFactionStorageRoutes(
+  ctx: RoutineContext,
+  settings: ReturnType<typeof getTraderSettings>,
+  currentSystem: string,
+): TradeRoute[] {
+  const { bot } = ctx;
+  const routes: TradeRoute[] = [];
+  if (bot.factionStorage.length === 0) return routes;
+
+  const allBuys = mapStore.getAllBuyDemand();
+  if (allBuys.length === 0) return routes;
+
+  for (const item of bot.factionStorage) {
+    const lower = item.itemId.toLowerCase();
+    if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+    if (item.quantity <= 0) continue;
+
+    // Filter by allowed items if configured
+    if (settings.tradeItems.length > 0) {
+      const match = settings.tradeItems.some(t =>
+        item.itemId.toLowerCase().includes(t.toLowerCase()) ||
+        item.name.toLowerCase().includes(t.toLowerCase())
+      );
+      if (!match) continue;
+    }
+
+    // Material cost = cheapest known market price for this item
+    const itemCost = getItemMarketCost(item.itemId);
+
+    // Find best buy order for this item across all known stations
+    const itemBuys = allBuys
+      .filter(b => b.itemId === item.itemId && b.price > 0)
+      .sort((a, b) => b.price - a.price);
+
+    for (const buy of itemBuys) {
+      // Skip if sell price doesn't beat material cost
+      if (buy.price <= itemCost) continue;
+
+      const { jumps, cost: fuelCost } = estimateFuelCost(currentSystem, buy.systemId, settings.fuelCostPerJump);
+      if (jumps >= 999) continue;
+
+      const sellQty = Math.min(item.quantity, buy.quantity);
+      const profitPerUnit = buy.price - itemCost - (jumps > 0 ? fuelCost / sellQty : 0);
+      if (profitPerUnit < settings.minProfitPerUnit) continue;
+
+      const totalProfit = profitPerUnit * sellQty;
+
+      routes.push({
+        itemId: item.itemId,
+        itemName: item.name,
+        sourceSystem: currentSystem,
+        sourcePoi: "",       // signals: withdraw from faction storage
+        sourcePoiName: "faction storage",
+        buyPrice: itemCost,  // material/market cost basis
+        buyQty: sellQty,
+        destSystem: buy.systemId,
+        destPoi: buy.poiId,
+        destPoiName: buy.poiName,
+        sellPrice: buy.price,
+        sellQty,
+        jumps,
+        profitPerUnit,
+        totalProfit,
+      });
+      break; // best buy order for this item found
+    }
+  }
+
+  routes.sort((a, b) => b.totalProfit - a.totalProfit);
+  return routes;
+}
+
 // ── Market analysis ──────────────────────────────────────────
 
 /** Call analyze_market and log top insight. Builds trading XP. Must be docked. */
@@ -155,26 +249,22 @@ async function tryInsureShip(ctx: RoutineContext, cargoValue: number): Promise<v
 
   if (cargoValue <= 0) return;
 
-  // Check for existing active policies
-  const policiesResp = await bot.exec("policies");
-  if (!policiesResp.error && policiesResp.result) {
-    const pr = policiesResp.result as Record<string, unknown>;
-    const policies = Array.isArray(pr.policies) ? pr.policies : (Array.isArray(pr) ? pr : []);
-    if ((policies as unknown[]).length > 0) return;
-  }
-
-  // Get a quote
-  const quoteResp = await bot.exec("quote");
+  // Get a quote — also tells us if we already have coverage
+  const quoteResp = await bot.exec("get_insurance_quote");
   if (quoteResp.error || !quoteResp.result) return;
 
   const qr = quoteResp.result as Record<string, unknown>;
   const quoteObj = (qr.quote as Record<string, unknown>) ?? qr;
   const premium = (quoteObj.premium as number) ?? 0;
 
+  // Already insured?
+  const insured = (quoteObj.insured as boolean) ?? (qr.insured as boolean) ?? false;
+  if (insured) return;
+
   // Only insure if we can comfortably afford it
   if (!premium || premium > cargoValue * 0.1 || bot.credits < premium * 3) return;
 
-  const insureResp = await bot.exec("insure");
+  const insureResp = await bot.exec("buy_insurance");
   if (!insureResp.error) {
     ctx.log("trade", `Insured ship for trade run (premium: ${premium}cr, cargo value: ~${cargoValue}cr)`);
     await bot.refreshStatus();
@@ -254,6 +344,88 @@ async function tryMissions(ctx: RoutineContext): Promise<void> {
   }
 }
 
+// ── Faction storage liquidation ───────────────────────────────
+
+/**
+ * Sell items from faction storage at the current station's market.
+ * Withdraws non-fuel items that can be sold here, sells them, and logs profit.
+ * Must be docked.
+ */
+async function sellFactionStorageItems(ctx: RoutineContext): Promise<number> {
+  const { bot } = ctx;
+  if (!bot.docked) return 0;
+
+  await bot.refreshFactionStorage();
+  if (bot.factionStorage.length === 0) return 0;
+
+  // Get current station's market to check what's sellable
+  const marketResp = await bot.exec("view_market");
+  if (!marketResp.result || typeof marketResp.result !== "object") return 0;
+
+  const marketData = marketResp.result as Record<string, unknown>;
+  const listings = (
+    Array.isArray(marketData) ? marketData :
+    Array.isArray(marketData.items) ? marketData.items :
+    Array.isArray(marketData.listings) ? marketData.listings :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  // Build set of items this market buys
+  const buyableItems = new Set<string>();
+  for (const listing of listings) {
+    const itemId = (listing.item_id as string) || "";
+    const buyPrice = (listing.buy_price as number) || (listing.best_sell as number) || 0;
+    if (itemId && buyPrice > 0) buyableItems.add(itemId);
+  }
+
+  if (buyableItems.size === 0) return 0;
+
+  // Find faction storage items we can sell here
+  const toSell: Array<{ itemId: string; name: string; qty: number }> = [];
+  for (const item of bot.factionStorage) {
+    const lower = item.itemId.toLowerCase();
+    if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+    if (!buyableItems.has(item.itemId)) continue;
+    toSell.push({ itemId: item.itemId, name: item.name, qty: item.quantity });
+  }
+
+  if (toSell.length === 0) return 0;
+
+  let totalSold = 0;
+  const soldItems: string[] = [];
+
+  for (const item of toSell) {
+    // Check cargo space
+    await bot.refreshStatus();
+    const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
+    if (freeSpace <= 0) break;
+
+    const qty = Math.min(item.qty, freeSpace);
+    if (qty <= 0) continue;
+
+    // Withdraw from faction storage
+    const wResp = await bot.exec("faction_withdraw_items", { item_id: item.itemId, quantity: qty });
+    if (wResp.error) continue;
+
+    // Sell immediately
+    const sResp = await bot.exec("sell", { item_id: item.itemId, quantity: qty });
+    if (!sResp.error) {
+      totalSold += qty;
+      soldItems.push(`${qty}x ${item.name}`);
+    } else {
+      // Sell failed — put back in faction storage
+      await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: qty });
+    }
+  }
+
+  if (soldItems.length > 0) {
+    ctx.log("trade", `Sold from faction storage: ${soldItems.join(", ")}`);
+    await bot.refreshStatus();
+  }
+
+  return totalSold;
+}
+
 // ── Trader routine ───────────────────────────────────────────
 
 /**
@@ -286,6 +458,7 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       await recordMarketData(ctx);
       await analyzeMarket(ctx);
       await tryMissions(ctx);
+      await sellFactionStorageItems(ctx);
     }
 
     // ── Fuel + hull check ──
@@ -293,10 +466,19 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     await tryRefuel(ctx);
     await repairShip(ctx);
 
-    // ── Find trade opportunities ──
+    // ── Find trade opportunities (market arbitrage + faction storage) ──
     yield "find_trades";
     await bot.refreshStatus();
-    const routes = findTradeOpportunities(settings, bot.system);
+    if (bot.docked) {
+      await bot.refreshFactionStorage();
+    }
+    const marketRoutes = findTradeOpportunities(settings, bot.system);
+    const factionRoutes = findFactionStorageRoutes(ctx, settings, bot.system);
+    const routes = [...marketRoutes, ...factionRoutes].sort((a, b) => b.totalProfit - a.totalProfit);
+
+    if (factionRoutes.length > 0) {
+      ctx.log("trade", `Found ${marketRoutes.length} market routes + ${factionRoutes.length} faction storage routes`);
+    }
 
     if (routes.length === 0) {
       ctx.log("trade", "No profitable trade routes found — waiting 60s before re-scanning");
@@ -313,9 +495,60 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     for (let ri = 0; ri < Math.min(routes.length, MAX_ROUTE_ATTEMPTS); ri++) {
       if (bot.state !== "running") break;
       const candidate = routes[ri];
-      ctx.log("trade", `Route #${ri + 1}: ${candidate.itemName} — buy ${candidate.buyQty}x at ${candidate.sourcePoiName} (${candidate.buyPrice}cr) → sell at ${candidate.destPoiName} (${candidate.sellPrice}cr) — est. profit ${Math.round(candidate.totalProfit)}cr (${candidate.jumps} jumps)`);
+      const isFactionRoute = candidate.sourcePoi === "";
 
-      // ── Travel to source station ──
+      if (isFactionRoute) {
+        ctx.log("trade", `Route #${ri + 1}: ${candidate.itemName} — withdraw ${candidate.buyQty}x from faction storage (cost: ${candidate.buyPrice}cr/ea) → sell at ${candidate.destPoiName} (${candidate.sellPrice}cr) — est. profit ${Math.round(candidate.totalProfit)}cr (${candidate.jumps} jumps)`);
+      } else {
+        ctx.log("trade", `Route #${ri + 1}: ${candidate.itemName} — buy ${candidate.buyQty}x at ${candidate.sourcePoiName} (${candidate.buyPrice}cr) → sell at ${candidate.destPoiName} (${candidate.sellPrice}cr) — est. profit ${Math.round(candidate.totalProfit)}cr (${candidate.jumps} jumps)`);
+      }
+
+      if (isFactionRoute) {
+        // ── Faction storage route: withdraw from faction storage and sell ──
+        yield "withdraw_faction";
+        await ensureDocked(ctx);
+
+        // Clear cargo: keep 3 fuel cells, deposit everything else
+        const RESERVE_FC = 3;
+        await bot.refreshCargo();
+        for (const item of bot.inventory) {
+          const lower = item.itemId.toLowerCase();
+          const isFuel = lower.includes("fuel") || lower.includes("energy_cell");
+          if (isFuel) {
+            const excess = item.quantity - RESERVE_FC;
+            if (excess > 0) await bot.exec("deposit_items", { item_id: item.itemId, quantity: excess });
+          } else {
+            await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+          }
+        }
+
+        // Withdraw target item from faction storage
+        await bot.refreshFactionStorage();
+        await bot.refreshStatus();
+        const factionItem = bot.factionStorage.find(i => i.itemId === candidate.itemId);
+        const availQty = factionItem ? factionItem.quantity : 0;
+        const freeSpaceF = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
+        let qty = Math.min(candidate.buyQty, availQty, freeSpaceF);
+
+        if (qty <= 0) {
+          ctx.log("trade", `${candidate.itemName} no longer in faction storage — trying next route`);
+          continue;
+        }
+
+        const wResp = await bot.exec("faction_withdraw_items", { item_id: candidate.itemId, quantity: qty });
+        if (wResp.error) {
+          ctx.log("error", `Withdraw from faction storage failed: ${wResp.error.message} — trying next route`);
+          continue;
+        }
+
+        route = candidate;
+        buyQty = qty;
+        investedCredits = qty * candidate.buyPrice; // material cost basis
+        ctx.log("trade", `Withdrew ${qty}x ${candidate.itemName} from faction storage (material cost: ${investedCredits}cr)`);
+        break;
+      }
+
+      // ── Normal market route: travel to source and buy ──
       yield "travel_to_source";
 
       if (bot.system !== candidate.sourceSystem) {
@@ -577,10 +810,16 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
       if (!sResp.error) {
         ctx.log("trade", `Sold ${item.quantity}x ${item.name} from storage`);
       } else {
-        // Can't sell here — deposit instead
-        await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        // Can't sell here — deposit to faction storage (shared pool)
+        const fResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        if (fResp.error) {
+          await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        }
       }
     }
+
+    // Sell faction storage items at this market too
+    await sellFactionStorageItems(ctx);
 
     await bot.refreshStatus();
     const creditsAfter = bot.credits;

@@ -24,7 +24,7 @@ import {
 
 // ── Settings ─────────────────────────────────────────────────
 
-type DepositMode = "storage" | "faction" | "sell";
+type DepositMode = "storage" | "faction" | "sell" | "gift";
 
 /** Read miner settings from data/settings.json.
  *  Per-bot overrides for targetOre, depositMode, depositBot are checked first. */
@@ -45,14 +45,14 @@ function getMinerSettings(username?: string): {
 
   // depositMode: per-bot override > global > fallback
   function parseDepositMode(val: unknown): DepositMode | null {
-    if (val === "faction" || val === "sell" || val === "storage") return val;
+    if (val === "faction" || val === "sell" || val === "storage" || val === "gift") return val;
     return null;
   }
 
   let depositMode: DepositMode =
     parseDepositMode(botOverrides.depositMode) ??
     parseDepositMode(m.depositMode) ??
-    (m.sellOre === true ? "sell" : "storage");
+    (m.sellOre === true ? "sell" : "faction");
 
   let depositFallback: DepositMode =
     parseDepositMode(botOverrides.depositFallback) ??
@@ -474,11 +474,14 @@ export const minerRoutine: Routine = async function* (ctx: RoutineContext) {
 
       // Deposit helper: attempts primary mode, falls back on error
       async function depositItem(itemId: string, quantity: number, displayName: string, mode: DepositMode, recipient: string): Promise<boolean> {
-        if (recipient) {
-          const giftResp = await bot.exec("send_gift", { recipient, item_id: itemId, quantity });
-          if (!giftResp.error) return true;
-          ctx.log("trade", `Gift to ${recipient} failed for ${displayName}: ${giftResp.error.message}`);
-          return false;
+        if (mode === "gift" || recipient) {
+          const target = recipient || settings.depositBot;
+          if (target) {
+            const giftResp = await bot.exec("send_gift", { recipient: target, item_id: itemId, quantity });
+            if (!giftResp.error) return true;
+            ctx.log("trade", `Gift to ${target} failed for ${displayName}: ${giftResp.error.message}`);
+            return false;
+          }
         }
         if (mode === "sell") {
           const sellResp = await bot.exec("sell", { item_id: itemId, quantity });

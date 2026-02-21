@@ -344,7 +344,7 @@ async function ensureInsured(ctx: RoutineContext): Promise<void> {
     return;
   }
 
-  const insureResp = await bot.exec("insure");
+  const insureResp = await bot.exec("buy_insurance");
   if (!insureResp.error) {
     ctx.log("info", `Insurance purchased for ${cost}cr`);
     await bot.refreshStatus();

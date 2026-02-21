@@ -394,26 +394,34 @@ async function main(): Promise<void> {
   if (bots.size > 0) {
     const assignments = server.getBotAssignments();
     server.logSystem(`Found ${bots.size} saved bot(s): ${[...bots.keys()].join(", ")}`);
+
+    // Stagger logins to avoid spamming the API
+    const LOGIN_DELAY_MS = 5000;
+    let loginIndex = 0;
     for (const [name, bot] of bots) {
-      bot.login().then(async (ok) => {
-        refreshStatusTable();
-        if (!ok) return;
-        // Fetch catalog data if stale (first logged-in bot triggers it)
-        if (catalogStore.isStale()) {
-          try {
-            await catalogStore.fetchAll(bot.api);
-            server.logSystem(`Catalog fetched (${catalogStore.getSummary()})`);
-          } catch (err) {
-            server.logSystem(`Catalog fetch failed: ${err}`);
+      const delay = loginIndex * LOGIN_DELAY_MS;
+      loginIndex++;
+      setTimeout(() => {
+        bot.login().then(async (ok) => {
+          refreshStatusTable();
+          if (!ok) return;
+          // Fetch catalog data if stale (first logged-in bot triggers it)
+          if (catalogStore.isStale()) {
+            try {
+              await catalogStore.fetchAll(bot.api);
+              server.logSystem(`Catalog fetched (${catalogStore.getSummary()})`);
+            } catch (err) {
+              server.logSystem(`Catalog fetch failed: ${err}`);
+            }
           }
-        }
-        const routineKey = assignments[name];
-        if (!routineKey || !ROUTINES[routineKey]) return;
-        server.logSystem(`Auto-resuming ${name} with ${ROUTINES[routineKey].name}...`);
-        await handleStart({ type: "start", bot: name, routine: routineKey });
-      }).catch((err) => {
-        server.logSystem(`Login failed for ${name}: ${err}`);
-      });
+          const routineKey = assignments[name];
+          if (!routineKey || !ROUTINES[routineKey]) return;
+          server.logSystem(`Auto-resuming ${name} with ${ROUTINES[routineKey].name}...`);
+          await handleStart({ type: "start", bot: name, routine: routineKey });
+        }).catch((err) => {
+          server.logSystem(`Login failed for ${name}: ${err}`);
+        });
+      }, delay);
     }
   }
 
