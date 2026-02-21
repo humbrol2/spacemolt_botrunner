@@ -220,6 +220,15 @@ export const traderRoutine: Routine = async function* (ctx: RoutineContext) {
     // Record fresh market data at source
     await recordMarketData(ctx);
 
+    // Clear cargo: deposit non-fuel items to storage to make room for trade goods
+    await bot.refreshCargo();
+    for (const item of bot.inventory) {
+      const lower = item.itemId.toLowerCase();
+      if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+      ctx.log("trade", `Depositing ${item.quantity}x ${item.name} to storage to free cargo...`);
+      await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+    }
+
     // Determine how much we can buy (limited by cargo space and available credits)
     await bot.refreshStatus();
     const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : 999;
