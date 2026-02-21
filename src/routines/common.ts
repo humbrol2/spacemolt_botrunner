@@ -305,12 +305,8 @@ export async function collectFromStorage(ctx: RoutineContext): Promise<void> {
   // Withdraw credits
   const credits = (r.credits as number) || (r.stored_credits as number) || 0;
   if (credits > 0) {
-    ctx.log("trade", `Found ${credits} credits in storage — withdrawing...`);
     const wResp = await bot.exec("withdraw_credits", { amount: credits });
-    if (wResp.error) {
-      ctx.log("trade", `Credit withdrawal failed: ${wResp.error.message}`);
-    } else {
-      ctx.log("trade", `Withdrew ${credits} credits from storage`);
+    if (!wResp.error) {
       await bot.refreshStatus();
     }
   }
@@ -323,7 +319,9 @@ export async function collectFromStorage(ctx: RoutineContext): Promise<void> {
     []
   );
 
-  if (storedItems.length === 0) return;
+  if (storedItems.length === 0 && credits <= 0) return;
+
+  const withdrawnItems: string[] = [];
 
   // Sort: fuel cells first (most urgent)
   const sorted = [...storedItems].sort((a, b) => {
@@ -340,19 +338,30 @@ export async function collectFromStorage(ctx: RoutineContext): Promise<void> {
     const quantity = (item.quantity as number) || 0;
     if (!itemId || quantity <= 0) continue;
 
-    // Skip if cargo is full (unless it's fuel cells — always grab those)
     const isFuel = itemId.toLowerCase().includes("fuel") || itemId.toLowerCase().includes("energy_cell");
-    if (!isFuel && bot.cargoMax > 0 && bot.cargo >= bot.cargoMax) continue;
+
+    // Check available cargo space
+    const freeSpace = bot.cargoMax > 0 ? bot.cargoMax - bot.cargo : Infinity;
+    if (freeSpace <= 0 && !isFuel) continue; // cargo full — skip non-fuel
+    if (freeSpace <= 0) continue; // even fuel can't fit
+
+    // Limit withdraw quantity to available cargo space
+    const withdrawQty = freeSpace < Infinity ? Math.min(quantity, freeSpace) : quantity;
+    if (withdrawQty <= 0) continue;
 
     const displayName = (item.name as string) || itemId;
-    ctx.log("trade", `Withdrawing ${quantity}x ${displayName} from storage...`);
-    const wResp = await bot.exec("withdraw_items", { item_id: itemId, quantity });
-    if (wResp.error) {
-      ctx.log("trade", `Withdraw failed: ${wResp.error.message}`);
-    } else {
-      ctx.log("trade", `Withdrew ${quantity}x ${displayName}`);
+    const wResp = await bot.exec("withdraw_items", { item_id: itemId, quantity: withdrawQty });
+    if (!wResp.error) {
+      withdrawnItems.push(`${withdrawQty}x ${displayName}`);
+      await bot.refreshStatus();
     }
   }
+
+  // Summary line
+  const parts: string[] = [];
+  if (credits > 0) parts.push(`${credits} credits`);
+  if (withdrawnItems.length > 0) parts.push(withdrawnItems.join(", "));
+  if (parts.length > 0) ctx.log("trade", `Collected from storage: ${parts.join(", ")}`);
 
   await bot.refreshStatus();
 
@@ -369,7 +378,6 @@ export async function sellAllCargo(ctx: RoutineContext): Promise<number> {
 
   let sold = 0;
   for (const item of bot.inventory) {
-    ctx.log("trade", `Selling ${item.quantity}x ${item.name}...`);
     const resp = await bot.exec("sell", { item_id: item.itemId, quantity: item.quantity });
     if (!resp.error) sold++;
   }
@@ -477,19 +485,16 @@ export async function tryRefuel(ctx: RoutineContext): Promise<void> {
   await bot.refreshStatus();
 
   let fuelPct = bot.maxFuel > 0 ? (bot.fuel / bot.maxFuel) * 100 : bot.fuel;
-  if (fuelPct >= 95) {
-    ctx.log("system", "Fuel OK — skipping refuel");
-    return;
-  }
+  if (fuelPct >= 95) return;
+
+  const startFuel = Math.round(fuelPct);
 
   // Check if current station has refuel service
   const { pois } = await getSystemInfo(ctx);
   const currentStation = pois.find(p => isStationPoi(p) && p.id === bot.poi);
   if (currentStation?.services && currentStation.services.refuel === false) {
-    ctx.log("system", `Station ${currentStation.name} has no refuel service — looking for one that does...`);
     const refuelStation = findStation(pois, "refuel");
     if (refuelStation && refuelStation.id !== currentStation.id) {
-      ctx.log("travel", `Traveling to ${refuelStation.name} for refuel...`);
       await bot.exec("undock");
       bot.docked = false;
       await bot.exec("travel", { target_poi: refuelStation.id });
@@ -502,12 +507,8 @@ export async function tryRefuel(ctx: RoutineContext): Promise<void> {
         ctx.log("error", `Dock at ${refuelStation.name} failed: ${dResp.error.message}`);
         return;
       }
-    } else {
-      ctx.log("system", "No station with refuel service in this system — attempting anyway...");
     }
   }
-
-  ctx.log("system", `Fuel: ${bot.fuel}/${bot.maxFuel} (${Math.round(fuelPct)}%) — refueling...`);
 
   // Call refuel repeatedly until full or until it fails
   let consecutiveErrors = 0;
@@ -517,31 +518,29 @@ export async function tryRefuel(ctx: RoutineContext): Promise<void> {
       consecutiveErrors++;
       const msg = resp.error.message.toLowerCase();
       if (msg.includes("already full") || msg.includes("tank_full") || msg.includes("max")) {
-        break; // tank is full
+        break;
       }
       if (msg.includes("credit") || msg.includes("fuel_source") || msg.includes("insufficient")) {
-        ctx.log("system", "Can't afford fuel — selling cargo to raise credits...");
         const sold = await sellAllCargo(ctx);
         if (sold > 0) {
           await bot.refreshStatus();
-          ctx.log("system", `Credits after selling: ${bot.credits} — retrying refuel...`);
-          continue; // retry with new credits
+          continue;
         }
       }
-      if (consecutiveErrors >= 2) break; // stop if repeated failures
+      if (consecutiveErrors >= 2) break;
       continue;
     }
 
     consecutiveErrors = 0;
     await bot.refreshStatus();
     fuelPct = bot.maxFuel > 0 ? (bot.fuel / bot.maxFuel) * 100 : bot.fuel;
-    if (fuelPct >= 95) break; // full enough
+    if (fuelPct >= 95) break;
   }
 
   await bot.refreshStatus();
   fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
   if (fuelPct >= 50) {
-    ctx.log("system", `Fuel: ${bot.fuel}/${bot.maxFuel} (${fuelPct}%)`);
+    if (fuelPct > startFuel) ctx.log("system", `Refueled ${startFuel}% → ${fuelPct}%`);
     return;
   }
 
@@ -573,14 +572,14 @@ export async function repairShip(ctx: RoutineContext): Promise<void> {
   await bot.refreshStatus();
   const hullPct = bot.maxHull > 0 ? (bot.hull / bot.maxHull) * 100 : 100;
   if (hullPct < 95) {
+    const startHull = Math.round(hullPct);
+
     // Check if current station has repair service
     const { pois } = await getSystemInfo(ctx);
     const currentStation = pois.find(p => isStationPoi(p) && p.id === bot.poi);
     if (currentStation?.services && currentStation.services.repair === false) {
-      ctx.log("system", `Station ${currentStation.name} has no repair service — looking for one that does...`);
       const repairStation = findStation(pois, "repair");
       if (repairStation && repairStation.id !== currentStation.id) {
-        ctx.log("travel", `Traveling to ${repairStation.name} for repair...`);
         await bot.exec("undock");
         bot.docked = false;
         await bot.exec("travel", { target_poi: repairStation.id });
@@ -593,15 +592,13 @@ export async function repairShip(ctx: RoutineContext): Promise<void> {
           ctx.log("error", `Dock at ${repairStation.name} failed: ${dResp.error.message}`);
           return;
         }
-      } else {
-        ctx.log("system", "No station with repair service in this system — attempting anyway...");
       }
     }
 
-    ctx.log("system", `Hull: ${bot.hull}/${bot.maxHull} (${Math.round(hullPct)}%) — repairing...`);
     await bot.exec("repair");
     await bot.refreshStatus();
-    ctx.log("system", `Hull after repair: ${bot.hull}/${bot.maxHull}`);
+    const endHull = bot.maxHull > 0 ? Math.round((bot.hull / bot.maxHull) * 100) : 100;
+    if (endHull > startHull) ctx.log("system", `Repaired hull ${startHull}% → ${endHull}%`);
   }
 }
 
@@ -1174,8 +1171,8 @@ export async function scavengeWrecks(ctx: RoutineContext, opts?: { fuelOnly?: bo
   const wrecks = parseWrecks(wrecksResp.result);
   if (wrecks.length === 0) return 0;
 
-  ctx.log("scavenge", `Found ${wrecks.length} wreck(s)/container(s) nearby`);
   let totalLooted = 0;
+  const lootedItems: string[] = [];
 
   for (const wreck of wrecks) {
     if (bot.state !== "running") break;
@@ -1211,7 +1208,6 @@ export async function scavengeWrecks(ctx: RoutineContext, opts?: { fuelOnly?: bo
       if (bot.state !== "running") break;
       if (bot.cargoMax > 0 && bot.cargo >= bot.cargoMax) break;
 
-      ctx.log("scavenge", `Looting ${item.quantity}x ${item.name} from ${wreck.name}...`);
       const lootResp = await bot.exec("loot_wreck", {
         wreck_id: wreck.wreck_id,
         item_id: item.item_id,
@@ -1219,7 +1215,6 @@ export async function scavengeWrecks(ctx: RoutineContext, opts?: { fuelOnly?: bo
       });
 
       if (lootResp.error) {
-        ctx.log("scavenge", `Loot failed: ${lootResp.error.message}`);
         if (lootResp.error.message.toLowerCase().includes("empty") ||
             lootResp.error.message.toLowerCase().includes("not found")) {
           break;
@@ -1228,13 +1223,13 @@ export async function scavengeWrecks(ctx: RoutineContext, opts?: { fuelOnly?: bo
       }
 
       totalLooted++;
-      ctx.log("scavenge", `Looted ${item.quantity}x ${item.name}`);
+      lootedItems.push(`${item.quantity}x ${item.name}`);
     }
   }
 
   if (totalLooted > 0) {
     await bot.refreshCargo();
-    ctx.log("scavenge", `Scavenging complete — ${totalLooted} item(s) collected`);
+    ctx.log("scavenge", `Scavenged ${lootedItems.join(", ")} from ${wrecks.length} wreck(s)`);
   }
 
   return totalLooted;
@@ -1253,6 +1248,30 @@ export function readSettings(): Record<string, Record<string, unknown>> {
     }
   } catch { /* use defaults */ }
   return {};
+}
+
+/** Write settings to data/settings.json. Merges with existing settings. */
+export function writeSettings(updates: Record<string, Record<string, unknown>>): void {
+  const { writeFileSync, existsSync, mkdirSync, readFileSync } = require("fs");
+  const { join } = require("path");
+  const dir = join(process.cwd(), "data");
+  const file = join(dir, "settings.json");
+
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  let existing: Record<string, Record<string, unknown>> = {};
+  try {
+    if (existsSync(file)) {
+      existing = JSON.parse(readFileSync(file, "utf-8"));
+    }
+  } catch { /* start fresh */ }
+
+  // Deep merge: update each routine section
+  for (const [key, val] of Object.entries(updates)) {
+    existing[key] = { ...(existing[key] || {}), ...val };
+  }
+
+  writeFileSync(file, JSON.stringify(existing, null, 2) + "\n", "utf-8");
 }
 
 // ── Utilities ────────────────────────────────────────────────

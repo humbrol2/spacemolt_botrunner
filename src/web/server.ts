@@ -70,6 +70,9 @@ export class WebServer {
   private broadcastLog: string[] = [];
   private systemLog: string[] = [];
 
+  // Per-bot activity log buffers (username -> lines)
+  private botLogs = new Map<string, string[]>();
+
   // Latest bot statuses for initial page load
   private latestStatuses: BotStatus[] = [];
 
@@ -154,6 +157,12 @@ export class WebServer {
           const knownOres = mapStore.getAllKnownOres();
 
           // Send scrollback and current state
+          // Serialize per-bot logs as { username: lines[] }
+          const botLogsObj: Record<string, string[]> = {};
+          for (const [name, lines] of this.botLogs) {
+            botLogsObj[name] = lines;
+          }
+
           ws.send(JSON.stringify({
             type: "init",
             bots: this.latestStatuses,
@@ -167,6 +176,7 @@ export class WebServer {
               broadcast: this.broadcastLog,
               system: this.systemLog,
             },
+            botLogs: botLogsObj,
           }));
         },
 
@@ -226,6 +236,15 @@ export class WebServer {
   logSystem(line: string): void {
     this.pushLog(this.systemLog, line);
     this.broadcast({ type: "log", panel: "system", line });
+  }
+
+  logBot(username: string, line: string): void {
+    if (!this.botLogs.has(username)) {
+      this.botLogs.set(username, []);
+    }
+    const buf = this.botLogs.get(username)!;
+    this.pushLog(buf, line);
+    this.broadcast({ type: "botLog", username, line });
   }
 
   updateMapData(): void {

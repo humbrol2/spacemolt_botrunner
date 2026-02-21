@@ -619,6 +619,18 @@
   .resp-ok { color: var(--green); }
   .resp-err { color: var(--red); }
   .resp-data { color: var(--text-dim); margin-left: 12px; }
+  .log-entry { padding: 1px 0; }
+  .log-entry .log-time { color: var(--text-dim); }
+  .log-entry .log-cat { font-weight: 600; }
+  .log-entry .log-cat-system { color: #58a6ff; }
+  .log-entry .log-cat-error { color: #f85149; }
+  .log-entry .log-cat-travel { color: #d2a8ff; }
+  .log-entry .log-cat-mining { color: #f0883e; }
+  .log-entry .log-cat-trade { color: #3fb950; }
+  .log-entry .log-cat-rescue { color: #f778ba; }
+  .log-entry .log-cat-info { color: #8b949e; }
+  .log-entry .log-msg { color: var(--text); }
+  .exec-cooldown { opacity: 0.5; pointer-events: none; }
 
   /* ── Settings page ──────────────────────────────── */
   .settings-layout {
@@ -1631,6 +1643,7 @@
     <div class="top-tabs" id="topTabs">
       <div class="top-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</div>
       <div class="top-tab" data-tab="map" onclick="switchTab('map')">Map</div>
+      <div class="top-tab" data-tab="market" onclick="switchTab('market')">Market</div>
       <div class="top-tab" data-tab="missions" onclick="switchTab('missions')">Missions</div>
       <div class="top-tab" data-tab="faction" onclick="switchTab('faction')">Faction</div>
       <div class="top-tab" data-tab="shipyard" onclick="switchTab('shipyard')">Shipyard</div>
@@ -1711,6 +1724,8 @@
         <div class="sidebar-item" onclick="switchSettingsTab('crafter')">Crafter</div>
         <div class="sidebar-item" onclick="switchSettingsTab('rescue')">FuelRescue</div>
         <div class="sidebar-item" onclick="switchSettingsTab('explorer')">Explorer</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('coordinator')">Coordinator</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('trader')">Trader</div>
       </div>
       <div class="settings-panel" id="settingsContent">
         <!-- filled by JS -->
@@ -1747,7 +1762,7 @@
             <option value="security">Security Level</option>
           </select>
           <div style="margin-top:12px;border-top:1px solid #21262d;padding-top:10px">
-            <button class="sm" style="width:100%" onclick="toggleMarketOverview()">Market Overview</button>
+            <button class="sm" style="width:100%" onclick="switchTab('market')">Market Overview</button>
           </div>
         </div>
       </div>
@@ -1765,6 +1780,18 @@
         <div class="system-map-svg-wrap" id="systemMapSvgWrap"></div>
         <div class="system-map-legend" id="systemMapLegend"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ══ Market Tab ══ -->
+  <div class="tab-page" id="page-market">
+    <div style="padding:16px;overflow-y:auto;height:100%">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <h3 style="margin:0;color:var(--text-bright)">Market Overview</h3>
+        <span id="marketStats" style="color:var(--text-dim);font-size:12px"></span>
+        <input type="text" id="marketSearch" placeholder="Search items..." oninput="renderMarketTable()" style="margin-left:auto;width:200px;font-size:12px;padding:4px 8px">
+      </div>
+      <div id="marketTableWrap"></div>
     </div>
   </div>
 
@@ -1835,10 +1862,10 @@
         </div>
         <div class="response-panel">
           <div class="response-header">
-            <span>Command Log</span>
-            <button onclick="clearResponseLog()">Clear</button>
+            <span>Activity Log</span>
+            <button onclick="clearActivityLog()">Clear</button>
           </div>
-          <div class="response-log" id="responseLog"></div>
+          <div class="response-log" id="botActivityLog"></div>
         </div>
       </div>
     </div>
@@ -1892,7 +1919,7 @@ let activeSettingsTab = 'miner';
 // Profile state
 let profileBot = null;       // username of bot being viewed
 let profileSystemData = null; // cached system info {pois, connections}
-let profileRecipes = null;    // cached recipes from get_recipes
+let profileRecipes = null;    // cached recipes from catalog
 let profileMarket = null;     // cached market items from view_market (sorted by price)
 let profileSkills = {};       // cached skills { skill_id: level }
 let profileSkillsList = null;  // full skill objects for display (null = not fetched)
@@ -1936,6 +1963,7 @@ function switchTab(name) {
   if (page) page.classList.add('active');
   if (name === 'settings') renderSettingsPanel();
   if (name === 'map') renderMapPage();
+  if (name === 'market') renderMarketPage();
   if (name === 'missions') renderMissionsPage();
   if (name === 'faction') renderFactionPage();
   if (name === 'shipyard') renderShipyardPage();
@@ -1979,6 +2007,11 @@ function connect() {
           appendLines(broadcastEl, 'broadcast', msg.logs.broadcast || []);
           appendLines(systemEl, 'system', msg.logs.system || []);
         }
+        // Load per-bot logs
+        if (msg.botLogs) {
+          botLogBuffers = msg.botLogs;
+          if (profileBot) renderBotActivityLog();
+        }
         break;
       case 'status':
         bots = msg.bots || [];
@@ -2003,6 +2036,14 @@ function connect() {
           settings = msg.settings;
         }
         break;
+      case 'botLog':
+        if (msg.username && msg.line) {
+          if (!botLogBuffers[msg.username]) botLogBuffers[msg.username] = [];
+          botLogBuffers[msg.username].push(msg.line);
+          if (botLogBuffers[msg.username].length > 200) botLogBuffers[msg.username].shift();
+          if (profileBot === msg.username) appendBotLogLine(msg.line);
+        }
+        break;
       case 'execResult':
         handleExecResult(msg);
         break;
@@ -2012,6 +2053,10 @@ function connect() {
         // Re-render map tab if it's active
         if (document.getElementById('page-map')?.classList.contains('active')) {
           renderMapPage();
+        }
+        // Re-render market tab if it's active
+        if (document.getElementById('page-market')?.classList.contains('active')) {
+          renderMarketTable();
         }
         // Re-render missions tab if it's active
         if (document.getElementById('page-missions')?.classList.contains('active')) {
@@ -2077,12 +2122,14 @@ function openProfile(username) {
   renderProfileSidebar();
   renderProfileTopbar();
   renderManualControls();
+  renderBotActivityLog();
 
-  // Fetch system data, skills, recipes, and market
+  // Fetch system data, skills, recipes, and market (market only when docked)
   fetchSystemData(username);
   fetchSkills(username);
   fetchRecipes(username);
-  fetchMarket(username);
+  const botObj = bots.find(b => b.username === username);
+  if (botObj && botObj.docked) fetchMarket(username);
 }
 
 function closeProfile() {
@@ -2141,6 +2188,32 @@ function renderProfileTopbar() {
       <select id="profile-targetOre" onchange="saveProfileTargetOre()">${oreOpts.join('')}</select>`;
   }
 
+  // Per-bot explorer mode selector (visible when explorer is selected or running)
+  const isExplorer = (bot.state === 'running' && bot.routine === 'explorer')
+    || (bot.state !== 'running' && bot.state !== 'stopping' && getProfileSelectedRoutine() === 'explorer');
+  if (isExplorer) {
+    const botSettings = settings[bot.username] || {};
+    const explorerMode = botSettings.explorerMode || 'explore';
+    actions += `
+      <span class="profile-ore-label">Mode:</span>
+      <select id="profile-explorerMode" onchange="saveProfileExplorerMode()">
+        <option value="explore"${explorerMode === 'explore' ? ' selected' : ''}>Explore new systems</option>
+        <option value="trade_update"${explorerMode === 'trade_update' ? ' selected' : ''}>Update trade data</option>
+      </select>`;
+  }
+
+  // Per-bot missions toggle (visible for miner and explorer)
+  const isMinerOrExplorer = isMiner || isExplorer;
+  if (isMinerOrExplorer) {
+    const botSettings = settings[bot.username] || {};
+    const acceptMissions = botSettings.acceptMissions !== undefined ? botSettings.acceptMissions : true;
+    actions += `
+      <label class="profile-ore-label" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-left:8px">
+        <input type="checkbox" id="profile-acceptMissions" onchange="saveProfileAcceptMissions()"${acceptMissions ? ' checked' : ''}>
+        Missions
+      </label>`;
+  }
+
   document.getElementById('profileActions').innerHTML = actions;
 }
 
@@ -2162,6 +2235,93 @@ function saveProfileTargetOre() {
   const targetOre = sel.value;
   const existing = settings[bot.username] || {};
   const updated = Object.assign({}, existing, { targetOre });
+  send({ type: 'saveSettings', routine: bot.username, settings: updated });
+  settings[bot.username] = updated;
+}
+
+function saveProfileExplorerMode() {
+  const bot = getProfileBot();
+  if (!bot) return;
+  const sel = document.getElementById('profile-explorerMode');
+  if (!sel) return;
+  const explorerMode = sel.value;
+  const existing = settings[bot.username] || {};
+  const updated = Object.assign({}, existing, { explorerMode });
+  send({ type: 'saveSettings', routine: bot.username, settings: updated });
+  settings[bot.username] = updated;
+}
+
+function saveProfileAcceptMissions() {
+  const bot = getProfileBot();
+  if (!bot) return;
+  const cb = document.getElementById('profile-acceptMissions');
+  if (!cb) return;
+  const acceptMissions = cb.checked;
+  const existing = settings[bot.username] || {};
+  const updated = Object.assign({}, existing, { acceptMissions });
+  send({ type: 'saveSettings', routine: bot.username, settings: updated });
+  settings[bot.username] = updated;
+}
+
+function renderPerBotSettings(bot) {
+  const routine = bot.routine || (bot.state !== 'running' ? getProfileSelectedRoutine() : null);
+  if (routine !== 'miner') return '';
+
+  const botSettings = settings[bot.username] || {};
+  const globalMiner = settings.miner || {};
+
+  // Deposit mode: per-bot > global
+  const depositMode = botSettings.depositMode || globalMiner.depositMode || 'storage';
+  const depositFallback = botSettings.depositFallback || globalMiner.depositFallback || 'storage';
+  const depositBot = botSettings.depositBot || globalMiner.depositBot || '';
+
+  // Build bot recipient options
+  const botOpts = [`<option value=""${!depositBot ? ' selected' : ''}>(none)</option>`];
+  for (const b of bots) {
+    if (b.username === bot.username) continue;
+    const sel = b.username === depositBot ? ' selected' : '';
+    botOpts.push(`<option value="${esc(b.username)}"${sel}>${esc(b.username)}</option>`);
+  }
+
+  function modeOpts(current) {
+    return ['storage', 'faction', 'sell'].map(m => {
+      const labels = { storage: 'Station storage', faction: 'Faction storage', sell: 'Sell at market' };
+      return `<option value="${m}"${m === current ? ' selected' : ''}>${labels[m]}</option>`;
+    }).join('');
+  }
+
+  return `
+    <div class="profile-card">
+      <div class="profile-card-header">Deposit Settings</div>
+      <div class="profile-card-body">
+        <div class="stat-grid" style="gap:6px 8px">
+          <span class="sl">Send To</span>
+          <select id="pbs-depositBot" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
+            ${botOpts.join('')}
+          </select>
+          <span class="sl">Deposit Mode</span>
+          <select id="pbs-depositMode" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
+            <option value=""${!botSettings.depositMode ? ' selected' : ''}>(global: ${esc(globalMiner.depositMode || 'storage')})</option>
+            ${modeOpts(botSettings.depositMode || '')}
+          </select>
+          <span class="sl">Fallback</span>
+          <select id="pbs-depositFallback" onchange="savePerBotDepositSettings()" style="font-size:11px;padding:2px 4px">
+            <option value=""${!botSettings.depositFallback ? ' selected' : ''}>(global: ${esc(globalMiner.depositFallback || 'storage')})</option>
+            ${modeOpts(botSettings.depositFallback || '')}
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
+
+function savePerBotDepositSettings() {
+  const bot = getProfileBot();
+  if (!bot) return;
+  const depositBot = document.getElementById('pbs-depositBot')?.value || '';
+  const depositMode = document.getElementById('pbs-depositMode')?.value || '';
+  const depositFallback = document.getElementById('pbs-depositFallback')?.value || '';
+  const existing = settings[bot.username] || {};
+  const updated = Object.assign({}, existing, { depositBot, depositMode, depositFallback });
   send({ type: 'saveSettings', routine: bot.username, settings: updated });
   settings[bot.username] = updated;
 }
@@ -2220,6 +2380,8 @@ function renderProfileSidebar() {
         <div class="inv-list">${renderSkillsList()}</div>
       </div>
     </div>
+
+    ${renderPerBotSettings(bot)}
   `;
 }
 
@@ -2847,20 +3009,57 @@ const FORMATTERS = {
     return s;
   },
 
-  get_recipes(d) {
-    const recipes = Array.isArray(d) ? d : (d.recipes || []);
-    if (!recipes.length) return 'No recipes available';
-    return recipes.map(r => {
-      const name = r.name || r.recipe_id || '?';
-      const comps = r.components || r.ingredients || r.inputs || r.materials || [];
-      const needs = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
-      return `  ${esc(name)}: ${esc(needs)}`;
-    }).join('\n');
+  catalog(d) {
+    const type = d.type || '';
+    const items = Array.isArray(d.items) ? d.items : (Array.isArray(d) ? d : []);
+    const total = d.total || items.length;
+    const page = d.page || 1;
+    const totalPages = d.total_pages || 1;
+    if (type === 'recipes') {
+      if (!items.length) return 'No recipes available';
+      const preview = items.slice(0, 10).map(r => {
+        const name = r.name || r.recipe_id || r.id || '?';
+        const comps = r.components || r.ingredients || r.inputs || r.materials || [];
+        const needs = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
+        return `  ${esc(name)}: ${esc(needs)}`;
+      }).join('\n');
+      return `${total} recipes (page ${page}/${totalPages})\n${preview}${items.length > 10 ? '\n  ...' : ''}`;
+    }
+    return `Catalog: ${total} ${type || 'entries'} (page ${page}/${totalPages})`;
   },
 };
 
+// Rate limiting: 10s cooldown on action (mutation) commands per bot
+const QUERY_COMMANDS = new Set([
+  'get_status', 'get_cargo', 'get_ship', 'get_system', 'get_nearby',
+  'get_skills', 'get_missions', 'get_active_missions',
+  'get_battle_status', 'get_notifications', 'get_trades', 'get_wrecks',
+  'view_market', 'view_orders', 'view_storage', 'view_faction_storage',
+  'list_ships', 'get_ships', 'catalog', 'scan', 'help', 'get_location',
+  'get_map', 'get_poi', 'faction_info', 'faction_list', 'search_systems',
+  'find_route', 'get_commands', 'get_base', 'get_notes', 'get_version',
+  'estimate_purchase', 'get_insurance_quote', 'facility',
+]);
+const TICK_COOLDOWN_MS = 10000;
+let lastActionTime = {};
+let cooldownTimer = null;
+
 function mcExec(command, params) {
   if (!profileBot) return;
+
+  // Rate limit action commands (1 per tick)
+  if (!QUERY_COMMANDS.has(command)) {
+    const lastTime = lastActionTime[profileBot] || 0;
+    const elapsed = Date.now() - lastTime;
+    if (elapsed < TICK_COOLDOWN_MS) {
+      const remaining = Math.ceil((TICK_COOLDOWN_MS - elapsed) / 1000);
+      logResponse(`<span class="resp-err">Cooldown: wait ${remaining}s before next action (10s tick rate)</span>`);
+      return;
+    }
+    lastActionTime[profileBot] = Date.now();
+    startCooldownIndicator();
+  }
+
   const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
   const paramStr = params ? ' ' + JSON.stringify(params) : '';
   logResponse(`<span class="resp-cmd">${ts} > ${esc(command)}${esc(paramStr)}</span>`);
@@ -2883,11 +3082,23 @@ function mcExec(command, params) {
       setTimeout(() => {
         if (profileBot) {
           fetchSystemData(profileBot);
-          fetchMarket(profileBot);
+          const pBot = bots.find(b => b.username === profileBot);
+          if (pBot && pBot.docked) fetchMarket(profileBot);
         }
       }, 1000);
     }
   });
+}
+
+function startCooldownIndicator() {
+  const controls = document.getElementById('manualControls');
+  if (!controls) return;
+  controls.classList.add('exec-cooldown');
+  if (cooldownTimer) clearTimeout(cooldownTimer);
+  cooldownTimer = setTimeout(() => {
+    controls.classList.remove('exec-cooldown');
+    cooldownTimer = null;
+  }, TICK_COOLDOWN_MS);
 }
 
 function mcExecCustom() {
@@ -2939,16 +3150,63 @@ function handleExecResult(msg) {
 }
 
 function logResponse(html) {
-  const log = document.getElementById('responseLog');
+  const log = document.getElementById('botActivityLog');
+  if (!log) return;
   const div = document.createElement('div');
   div.className = 'resp-entry';
   div.innerHTML = html;
   log.appendChild(div);
+  // Cap DOM entries
+  while (log.children.length > 300) log.removeChild(log.firstChild);
   log.scrollTop = log.scrollHeight;
 }
 
-function clearResponseLog() {
-  document.getElementById('responseLog').innerHTML = '';
+function clearActivityLog() {
+  const log = document.getElementById('botActivityLog');
+  if (log) log.innerHTML = '';
+}
+
+// Per-bot log buffers: { username: string[] }
+let botLogBuffers = {};
+
+const LOG_CAT_CLASSES = {
+  system: 'log-cat-system', error: 'log-cat-error', travel: 'log-cat-travel',
+  mining: 'log-cat-mining', trade: 'log-cat-trade', rescue: 'log-cat-rescue',
+  info: 'log-cat-info',
+};
+
+function formatBotLogLine(line) {
+  // Format: "HH:MM:SS [category] message"
+  const m = line.match(/^(\d{2}:\d{2}:\d{2})\s+\[([^\]]+)\]\s+([\s\S]*)$/);
+  if (!m) return `<span class="log-msg">${esc(line)}</span>`;
+  const [, time, cat, msg] = m;
+  const catClass = LOG_CAT_CLASSES[cat] || '';
+  return `<span class="log-time">${esc(time)}</span> <span class="log-cat ${catClass}">[${esc(cat)}]</span> <span class="log-msg">${esc(msg)}</span>`;
+}
+
+function appendBotLogLine(line) {
+  const log = document.getElementById('botActivityLog');
+  if (!log) return;
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = formatBotLogLine(line);
+  log.appendChild(div);
+  while (log.children.length > 300) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderBotActivityLog() {
+  const log = document.getElementById('botActivityLog');
+  if (!log || !profileBot) return;
+  log.innerHTML = '';
+  const lines = botLogBuffers[profileBot] || [];
+  for (const line of lines) {
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.innerHTML = formatBotLogLine(line);
+    log.appendChild(div);
+  }
+  log.scrollTop = log.scrollHeight;
 }
 
 // Fetch system POIs and connections for travel dropdowns
@@ -3024,16 +3282,27 @@ function fetchSkills(username) {
 }
 
 function fetchRecipes(username) {
-  sendExec(username, 'get_recipes', undefined, (result) => {
+  profileRecipes = [];
+  fetchRecipesPage(username, 1);
+}
+
+function fetchRecipesPage(username, page) {
+  sendExec(username, 'catalog', { type: 'recipes', page, page_size: 50 }, (result) => {
     if (!result.ok && !result.data) {
-      logResponse(`<span class="resp-cmd">get_recipes</span> <span class="resp-err">${esc(result.error || 'failed')}</span>`);
-      profileRecipes = [];
+      logResponse(`<span class="resp-cmd">catalog recipes</span> <span class="resp-err">${esc(result.error || 'failed')}</span>`);
       if (profileBot === username) renderManualControls();
       return;
     }
     const d = result.data || {};
-    profileRecipes = extractRecipes(d);
-    logResponse(`<span class="resp-cmd">get_recipes</span> <span class="resp-ok">Found ${profileRecipes.length} recipes</span>`);
+    const pageItems = extractRecipes(d);
+    profileRecipes = (profileRecipes || []).concat(pageItems);
+
+    const totalPages = d.total_pages || 1;
+    if (page < totalPages && pageItems.length > 0) {
+      fetchRecipesPage(username, page + 1);
+      return;
+    }
+    logResponse(`<span class="resp-cmd">catalog recipes</span> <span class="resp-ok">Found ${profileRecipes.length} recipes</span>`);
     if (profileBot === username) renderManualControls();
   });
 }
@@ -3062,8 +3331,8 @@ function canCraft(recipe, have) {
   // Check components
   const comps = recipe.components || recipe.ingredients || recipe.inputs || recipe.materials || [];
   for (const c of comps) {
-    const cId = c.item_id || c.id || '';
-    const need = c.quantity || 1;
+    const cId = c.item_id || c.id || c.item || '';
+    const need = c.quantity || c.amount || 1;
     if ((have[cId] || 0) < need) return false;
   }
   // Check skill requirement
@@ -3098,94 +3367,90 @@ function startBotFromProfile() {
 
 // ── Map ────────────────────────────────────────────────────
 const expandedSystems = new Set();
-let showingMarketOverview = false;
-
 function renderMapPage() {
   buildOreFilters();
   renderMapStats();
-  if (showingMarketOverview) {
-    renderMarketOverview();
-  } else {
-    renderMap();
-  }
+  renderMap();
 }
 
-function toggleMarketOverview() {
-  showingMarketOverview = !showingMarketOverview;
-  if (showingMarketOverview) {
-    renderMarketOverview();
-  } else {
-    renderMap();
-  }
+// ── Market Tab ──────────────────────────────────────────────
+
+let marketSortKey = 'name';
+let marketSortAsc = true;
+
+function renderMarketPage() {
+  renderMarketTable();
 }
 
-function renderMarketOverview() {
-  const container = document.getElementById('mapContent');
+function sortMarketBy(key) {
+  if (marketSortKey === key) {
+    marketSortAsc = !marketSortAsc;
+  } else {
+    marketSortKey = key;
+    marketSortAsc = key === 'name'; // name defaults ascending, numbers descending
+  }
+  renderMarketTable();
+}
+
+function renderMarketTable() {
+  const container = document.getElementById('marketTableWrap');
+  const statsEl = document.getElementById('marketStats');
   if (!container) return;
 
-  // Collect all market items across all stations with best prices
-  const itemPrices = new Map(); // item_id -> { name, stations: [{ sysName, stationName, buy, sell, updated }] }
+  // Collect all market + order data across all stations
+  const itemMap = new Map();
+  // item_id -> { name, stations: [{ sysName, stationName, buy, sell }], buyOrderQty, sellOrderQty }
 
   for (const [sysId, sys] of Object.entries(mapData)) {
     const sysName = sys.name || sysId;
     for (const poi of (sys.pois || [])) {
-      if (!poi.market || poi.market.length === 0) continue;
       const stationName = poi.name || poi.id;
-      for (const m of poi.market) {
-        if (!m.item_id) continue;
-        if (!itemPrices.has(m.item_id)) {
-          itemPrices.set(m.item_id, { name: m.item_name || m.item_id, stations: [] });
+
+      // Market prices + order quantities (from view_market order book)
+      if (poi.market && poi.market.length > 0) {
+        for (const m of poi.market) {
+          if (!m.item_id) continue;
+          if (!itemMap.has(m.item_id)) {
+            itemMap.set(m.item_id, { name: m.item_name || m.item_id, stations: [], buyOrderQty: 0, sellOrderQty: 0 });
+          }
+          const entry = itemMap.get(m.item_id);
+          entry.stations.push({
+            sysId, sysName, stationName,
+            buy: m.best_buy,
+            sell: m.best_sell,
+            updated: m.last_updated,
+          });
+          entry.buyOrderQty += (m.buy_quantity || 0);
+          entry.sellOrderQty += (m.sell_quantity || 0);
         }
-        itemPrices.get(m.item_id).stations.push({
-          sysId, sysName, stationName,
-          buy: m.best_buy,
-          sell: m.best_sell,
-          updated: m.last_updated
-        });
       }
     }
   }
 
-  if (itemPrices.size === 0) {
-    container.innerHTML = `
-      <div style="padding:16px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <h3 style="margin:0;color:var(--text-bright)">Market Overview</h3>
-          <button class="sm" onclick="toggleMarketOverview()">Back to Map</button>
-        </div>
-        <div class="map-empty">No market data yet. Bots record market prices when they dock at stations.</div>
-      </div>`;
+  // Count unique stations with market data
+  const stationSet = new Set();
+  for (const [sysId, sys] of Object.entries(mapData)) {
+    for (const poi of (sys.pois || [])) {
+      if (poi.market && poi.market.length > 0) stationSet.add(`${sysId}:${poi.id}`);
+    }
+  }
+
+  if (statsEl) {
+    statsEl.textContent = `${itemMap.size} items across ${stationSet.size} stations in ${Object.keys(mapData).length} systems`;
+  }
+
+  if (itemMap.size === 0) {
+    container.innerHTML = '<div class="map-empty">No market data yet. Bots record market prices when they dock at stations.</div>';
     return;
   }
 
-  // Sort items alphabetically
-  const sorted = [...itemPrices.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  // Build rows with computed fields for sorting
+  const searchTerm = (document.getElementById('marketSearch')?.value || '').toLowerCase();
+  const rows = [];
 
-  // Search filter
-  const searchTerm = (document.getElementById('mapSearch')?.value || '').toLowerCase();
-
-  let html = `<div style="padding:16px">`;
-  html += `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">`;
-  html += `<h3 style="margin:0;color:var(--text-bright)">Market Overview</h3>`;
-  html += `<span style="color:var(--text-dim);font-size:12px">${itemPrices.size} items across ${Object.keys(mapData).length} systems</span>`;
-  html += `<button class="sm" onclick="toggleMarketOverview()">Back to Map</button>`;
-  html += `</div>`;
-
-  html += `<table class="mkt-table" style="width:100%">`;
-  html += `<thead><tr>`;
-  html += `<th style="cursor:pointer" onclick="sortMarketOverview('name')">Item</th>`;
-  html += `<th style="cursor:pointer" onclick="sortMarketOverview('bestSell')">Best Sell</th>`;
-  html += `<th>Best Sell Station</th>`;
-  html += `<th style="cursor:pointer" onclick="sortMarketOverview('bestBuy')">Cheapest Buy</th>`;
-  html += `<th>Cheapest Buy Station</th>`;
-  html += `<th style="cursor:pointer" onclick="sortMarketOverview('spread')">Spread</th>`;
-  html += `<th># Stations</th>`;
-  html += `</tr></thead><tbody>`;
-
-  for (const [itemId, data] of sorted) {
+  for (const [itemId, data] of itemMap) {
     if (searchTerm && !data.name.toLowerCase().includes(searchTerm) && !itemId.toLowerCase().includes(searchTerm)) continue;
 
-    // Find best sell price (highest)
     let bestSell = null, bestSellStation = '';
     for (const s of data.stations) {
       if (s.sell != null && (bestSell === null || s.sell > bestSell)) {
@@ -3194,7 +3459,6 @@ function renderMarketOverview() {
       }
     }
 
-    // Find cheapest buy price (lowest)
     let bestBuy = null, bestBuyStation = '';
     for (const s of data.stations) {
       if (s.buy != null && s.buy > 0 && (bestBuy === null || s.buy < bestBuy)) {
@@ -3204,20 +3468,67 @@ function renderMarketOverview() {
     }
 
     const spread = (bestSell != null && bestBuy != null) ? bestSell - bestBuy : null;
-    const spreadColor = spread != null ? (spread > 0 ? 'var(--green)' : spread < 0 ? 'var(--red)' : 'var(--text-dim)') : 'var(--text-dim)';
+
+    rows.push({
+      itemId, name: data.name,
+      bestSell, bestSellStation,
+      bestBuy, bestBuyStation,
+      spread, stationCount: data.stations.length,
+      buyOrderQty: data.buyOrderQty,
+      sellOrderQty: data.sellOrderQty,
+    });
+  }
+
+  // Sort
+  rows.sort((a, b) => {
+    let av, bv;
+    switch (marketSortKey) {
+      case 'name': av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break;
+      case 'bestSell': av = a.bestSell ?? -1; bv = b.bestSell ?? -1; break;
+      case 'bestBuy': av = a.bestBuy ?? Infinity; bv = b.bestBuy ?? Infinity; break;
+      case 'spread': av = a.spread ?? -Infinity; bv = b.spread ?? -Infinity; break;
+      case 'buyQty': av = a.buyOrderQty; bv = b.buyOrderQty; break;
+      case 'sellQty': av = a.sellOrderQty; bv = b.sellOrderQty; break;
+      case 'stations': av = a.stationCount; bv = b.stationCount; break;
+      default: av = a.name; bv = b.name;
+    }
+    if (av < bv) return marketSortAsc ? -1 : 1;
+    if (av > bv) return marketSortAsc ? 1 : -1;
+    return 0;
+  });
+
+  const arrow = (key) => marketSortKey === key ? (marketSortAsc ? ' ▲' : ' ▼') : '';
+
+  let html = `<table class="mkt-table" style="width:100%">`;
+  html += `<thead><tr>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('name')">Item${arrow('name')}</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('bestSell')">Best Sell${arrow('bestSell')}</th>`;
+  html += `<th>Station</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('sellQty')">Sell Orders${arrow('sellQty')}</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('bestBuy')">Cheapest Buy${arrow('bestBuy')}</th>`;
+  html += `<th>Station</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('buyQty')">Buy Orders${arrow('buyQty')}</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('spread')">Spread${arrow('spread')}</th>`;
+  html += `<th style="cursor:pointer" onclick="sortMarketBy('stations')"># Stations${arrow('stations')}</th>`;
+  html += `</tr></thead><tbody>`;
+
+  for (const r of rows) {
+    const spreadColor = r.spread != null ? (r.spread > 0 ? 'var(--green)' : r.spread < 0 ? 'var(--red)' : 'var(--text-dim)') : 'var(--text-dim)';
 
     html += `<tr>`;
-    html += `<td style="font-weight:500">${esc(data.name)}</td>`;
-    html += `<td class="mkt-sell">${bestSell != null ? bestSell.toLocaleString() + ' cr' : '-'}</td>`;
-    html += `<td style="font-size:11px;color:var(--text-dim)">${bestSellStation ? esc(bestSellStation) : '-'}</td>`;
-    html += `<td class="mkt-buy">${bestBuy != null ? bestBuy.toLocaleString() + ' cr' : '-'}</td>`;
-    html += `<td style="font-size:11px;color:var(--text-dim)">${bestBuyStation ? esc(bestBuyStation) : '-'}</td>`;
-    html += `<td style="color:${spreadColor};font-weight:500">${spread != null ? (spread > 0 ? '+' : '') + spread.toLocaleString() + ' cr' : '-'}</td>`;
-    html += `<td style="text-align:center">${data.stations.length}</td>`;
+    html += `<td style="font-weight:500">${esc(r.name)}</td>`;
+    html += `<td class="mkt-sell">${r.bestSell != null ? r.bestSell.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="font-size:11px;color:var(--text-dim)">${r.bestSellStation ? esc(r.bestSellStation) : '-'}</td>`;
+    html += `<td style="text-align:center;color:var(--yellow)">${r.sellOrderQty > 0 ? r.sellOrderQty.toLocaleString() : '-'}</td>`;
+    html += `<td class="mkt-buy">${r.bestBuy != null ? r.bestBuy.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="font-size:11px;color:var(--text-dim)">${r.bestBuyStation ? esc(r.bestBuyStation) : '-'}</td>`;
+    html += `<td style="text-align:center;color:var(--green)">${r.buyOrderQty > 0 ? r.buyOrderQty.toLocaleString() : '-'}</td>`;
+    html += `<td style="color:${spreadColor};font-weight:500">${r.spread != null ? (r.spread > 0 ? '+' : '') + r.spread.toLocaleString() + ' cr' : '-'}</td>`;
+    html += `<td style="text-align:center">${r.stationCount}</td>`;
     html += `</tr>`;
   }
 
-  html += `</tbody></table></div>`;
+  html += `</tbody></table>`;
   container.innerHTML = html;
 }
 
@@ -3793,6 +4104,10 @@ function renderSettingsPanel() {
     renderRescueSettings(panel);
   } else if (activeSettingsTab === 'explorer') {
     renderExplorerSettings(panel);
+  } else if (activeSettingsTab === 'coordinator') {
+    renderCoordinatorSettings(panel);
+  } else if (activeSettingsTab === 'trader') {
+    renderTraderSettings(panel);
   }
 }
 
@@ -3953,6 +4268,23 @@ function saveMinerSettings() {
 // ── Crafter Settings ────────────────────────────────────────
 let cachedSettingsRecipes = null; // global recipes cache for settings panel
 
+function fetchSettingsRecipesPage(username, page, panel) {
+  sendExec(username, 'catalog', { type: 'recipes', page, page_size: 50 }, (result) => {
+    if (result.ok && result.data) {
+      const items = extractRecipes(result.data);
+      cachedSettingsRecipes = (cachedSettingsRecipes || []).concat(items);
+      const totalPages = result.data.total_pages || 1;
+      if (page < totalPages && items.length > 0) {
+        fetchSettingsRecipesPage(username, page + 1, panel);
+        return;
+      }
+    } else {
+      cachedSettingsRecipes = cachedSettingsRecipes || [];
+    }
+    if (activeSettingsTab === 'crafter') renderCrafterSettings(panel);
+  });
+}
+
 function renderCrafterSettings(panel) {
   const crafter = settings.crafter || {};
   const craftLimits = crafter.craftLimits || {};
@@ -3962,14 +4294,8 @@ function renderCrafterSettings(panel) {
   // If we don't have recipes yet, fetch from first available bot
   if (!cachedSettingsRecipes && bots.length > 0) {
     panel.innerHTML = '<h3>Crafter Settings</h3><div class="settings-desc">Loading recipes...</div>';
-    sendExec(bots[0].username, 'get_recipes', undefined, (result) => {
-      if (result.ok && result.data) {
-        cachedSettingsRecipes = extractRecipes(result.data);
-      } else {
-        cachedSettingsRecipes = [];
-      }
-      if (activeSettingsTab === 'crafter') renderCrafterSettings(panel);
-    });
+    cachedSettingsRecipes = [];
+    fetchSettingsRecipesPage(bots[0].username, 1, panel);
     return;
   }
 
@@ -3982,7 +4308,7 @@ function renderCrafterSettings(panel) {
     const name = r ? (r.name || r.recipe_id || id) : id;
     const category = r?.category || '';
     const comps = r ? (r.components || r.ingredients || r.inputs || r.materials || []) : [];
-    const compStr = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
+    const compStr = comps.map(c => `${c.quantity || c.amount || 1}x ${c.name || c.item_name || c.item_id || c.id}`).join(', ');
     const catBadge = category ? `<span class="craft-cat">${esc(category)}</span>` : '';
     return `
       <div class="craft-limit-row">
@@ -4005,7 +4331,7 @@ function renderCrafterSettings(panel) {
     categories.get(cat).push(r);
   }
   const catOpts = categories.size > 0
-    ? [...categories.keys()].sort().map(c => `<option value="${esc(c)}">${esc(c)} (${categories.get(c).length})</option>`).join('')
+    ? `<option value="__all__">All (${availableRecipes.length})</option>` + [...categories.keys()].sort().map(c => `<option value="${esc(c)}">${esc(c)} (${categories.get(c).length})</option>`).join('')
     : '<option value="">All recipes added</option>';
 
   panel.innerHTML = `
@@ -4017,8 +4343,11 @@ function renderCrafterSettings(panel) {
     </div>
 
     <div style="margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg)">
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input type="text" id="craft-search" placeholder="Search recipes..." oninput="updateCraftItemSelect()" style="flex:1;min-width:120px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
         <select id="craft-add-cat" onchange="updateCraftItemSelect()" style="min-width:100px">${catOpts}</select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
         <select id="craft-add-select" onchange="updateCraftAddDetail()" style="flex:1;min-width:0"></select>
         <input type="number" id="craft-add-qty" min="1" value="10" style="width:70px">
         <button class="primary sm" onclick="addCraftItem()">+ Add</button>
@@ -4055,10 +4384,11 @@ function renderCrafterSettings(panel) {
 function updateCraftItemSelect() {
   const catSel = document.getElementById('craft-add-cat');
   const itemSel = document.getElementById('craft-add-select');
-  const detail = document.getElementById('craft-add-detail');
+  const searchEl = document.getElementById('craft-search');
   if (!catSel || !itemSel) return;
 
   const cat = catSel.value;
+  const searchText = (searchEl?.value || '').trim().toLowerCase();
   const recipes = cachedSettingsRecipes || [];
   const crafter = settings.crafter || {};
   const craftLimits = crafter.craftLimits || {};
@@ -4066,17 +4396,28 @@ function updateCraftItemSelect() {
 
   const filtered = recipes.filter(r => {
     const id = r.recipe_id || r.id || r.name || '';
+    if (usedIds.has(id)) return false;
+    const name = (r.name || '').toLowerCase();
+    const desc = (r.description || '').toLowerCase();
     const rCat = r.category || 'Other';
-    return rCat === cat && !usedIds.has(id);
+    if (searchText) {
+      return name.includes(searchText) || id.toLowerCase().includes(searchText) || desc.includes(searchText) || rCat.toLowerCase().includes(searchText);
+    }
+    return cat === '__all__' || rCat === cat;
   });
+
+  // Sort by name for search results
+  if (searchText) filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   itemSel.innerHTML = filtered.length > 0
     ? filtered.map(r => {
         const id = r.recipe_id || r.id || r.name || '';
         const name = r.name || r.recipe_id || '?';
-        return `<option value="${esc(id)}">${esc(name)}</option>`;
+        const rCat = r.category || '';
+        const label = (searchText || cat === '__all__') && rCat ? `${name} [${rCat}]` : name;
+        return `<option value="${esc(id)}">${esc(label)}</option>`;
       }).join('')
-    : '<option value="">No items in this category</option>';
+    : `<option value="">${searchText ? 'No matches' : 'No items in this category'}</option>`;
 
   // Show detail for selected item
   updateCraftAddDetail();
@@ -4093,10 +4434,11 @@ function updateCraftAddDetail() {
   if (!r) { detail.textContent = ''; return; }
 
   const comps = r.components || r.ingredients || r.inputs || r.materials || [];
-  const compStr = comps.map(c => `${c.quantity || 1}x ${c.name || c.item_id}`).join(', ');
-  const output = r.output || r.result || r.produces || {};
-  const outName = output.name || output.item_id || r.name || '?';
-  const outQty = output.quantity || 1;
+  const compStr = comps.map(c => `${c.quantity || c.amount || 1}x ${c.name || c.item_name || c.item_id || c.id}`).join(', ');
+  const rawOutputs = r.outputs || r.output || r.result || r.produces;
+  const output = Array.isArray(rawOutputs) ? (rawOutputs[0] || {}) : (rawOutputs || {});
+  const outName = output.name || output.item_name || output.item_id || output.id || r.name || '?';
+  const outQty = output.quantity || output.amount || 1;
   detail.textContent = `${compStr} → ${outQty}x ${outName}`;
 }
 
@@ -4205,6 +4547,164 @@ function saveRescueSettings() {
     refuelThreshold: parseInt(document.getElementById('set-rescue-refuelThreshold').value) || 60,
   };
   send({ type: 'saveSettings', routine: 'rescue', settings: s });
+}
+
+// ── Coordinator Settings ────────────────────────────────────
+function renderCoordinatorSettings(panel) {
+  const c = settings.coordinator || {};
+  const cycleIntervalSec = c.cycleIntervalSec ?? 300;
+  const minProfitMargin = c.minProfitMargin ?? 20;
+  const maxCraftLimit = c.maxCraftLimit ?? 50;
+  const autoAdjustOre = c.autoAdjustOre !== false;
+  const autoAdjustCraft = c.autoAdjustCraft !== false;
+
+  panel.innerHTML = `
+    <h3>Coordinator Settings</h3>
+    <div class="settings-desc">The coordinator stays docked and analyzes market demand to auto-adjust crafter craft limits and miner target ore for maximum profitability.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Analysis Cycle (seconds)</div>
+        <div class="setting-hint">How often to re-analyze market data and adjust settings.</div>
+      </div>
+      <input type="number" id="set-coord-cycleInterval" min="60" max="3600" value="${cycleIntervalSec}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Min Profit Margin (%)</div>
+        <div class="setting-hint">Only recommend crafting recipes with at least this profit margin.</div>
+      </div>
+      <input type="number" id="set-coord-minProfitMargin" min="1" max="500" value="${minProfitMargin}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Max Craft Limit</div>
+        <div class="setting-hint">Cap on how high the coordinator can set any single recipe's craft limit.</div>
+      </div>
+      <input type="number" id="set-coord-maxCraftLimit" min="5" max="500" value="${maxCraftLimit}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Auto-adjust Ore Target</div>
+        <div class="setting-hint">Automatically set miner targetOre to the most-needed raw material.</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="set-coord-autoAdjustOre" ${autoAdjustOre ? 'checked' : ''}>
+        <span>Enabled</span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Auto-adjust Craft Limits</div>
+        <div class="setting-hint">Automatically adjust crafter craftLimits based on market demand.</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="set-coord-autoAdjustCraft" ${autoAdjustCraft ? 'checked' : ''}>
+        <span>Enabled</span>
+      </label>
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveCoordinatorSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveCoordinatorSettings() {
+  const s = {
+    cycleIntervalSec: parseInt(document.getElementById('set-coord-cycleInterval').value) || 300,
+    minProfitMargin: parseInt(document.getElementById('set-coord-minProfitMargin').value) || 20,
+    maxCraftLimit: parseInt(document.getElementById('set-coord-maxCraftLimit').value) || 50,
+    autoAdjustOre: document.getElementById('set-coord-autoAdjustOre').checked,
+    autoAdjustCraft: document.getElementById('set-coord-autoAdjustCraft').checked,
+  };
+  send({ type: 'saveSettings', routine: 'coordinator', settings: s });
+  settings.coordinator = s;
+}
+
+// ── Trader Settings ────────────────────────────────────────
+function renderTraderSettings(panel) {
+  const t = settings.trader || {};
+  const minProfitPerUnit = t.minProfitPerUnit ?? 10;
+  const maxCargoValue = t.maxCargoValue ?? 0;
+  const fuelCostPerJump = t.fuelCostPerJump ?? 50;
+  const refuelThreshold = t.refuelThreshold ?? 50;
+  const repairThreshold = t.repairThreshold ?? 40;
+  const homeSystem = t.homeSystem ?? '';
+
+  panel.innerHTML = `
+    <h3>Trader Settings</h3>
+    <div class="settings-desc">The trader bot finds price spreads between stations, buys low and sells high. Requires market data from explorers scanning stations.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Min Profit Per Unit (credits)</div>
+        <div class="setting-hint">Only run trade routes where per-item profit exceeds this amount after fuel costs.</div>
+      </div>
+      <input type="number" id="set-trader-minProfitPerUnit" min="1" max="10000" value="${minProfitPerUnit}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Max Cargo Value (credits)</div>
+        <div class="setting-hint">Cap on total investment per trade run. 0 = unlimited.</div>
+      </div>
+      <input type="number" id="set-trader-maxCargoValue" min="0" max="1000000" value="${maxCargoValue}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Fuel Cost Per Jump (credits)</div>
+        <div class="setting-hint">Estimated fuel cost per system jump, used for profit calculations.</div>
+      </div>
+      <input type="number" id="set-trader-fuelCostPerJump" min="0" max="1000" value="${fuelCostPerJump}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold (%)</div>
+        <div class="setting-hint">Refuel at station when fuel drops below this %.</div>
+      </div>
+      <input type="number" id="set-trader-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold (%)</div>
+        <div class="setting-hint">Repair hull at station when HP drops below this %.</div>
+      </div>
+      <input type="number" id="set-trader-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Home System</div>
+        <div class="setting-hint">Fallback system to return to between trades (empty = stay wherever the last trade ends).</div>
+      </div>
+      <input type="text" id="set-trader-homeSystem" value="${esc(homeSystem)}" placeholder="e.g. sol" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveTraderSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveTraderSettings() {
+  const s = {
+    minProfitPerUnit: parseInt(document.getElementById('set-trader-minProfitPerUnit').value) || 10,
+    maxCargoValue: parseInt(document.getElementById('set-trader-maxCargoValue').value) || 0,
+    fuelCostPerJump: parseInt(document.getElementById('set-trader-fuelCostPerJump').value) || 50,
+    refuelThreshold: parseInt(document.getElementById('set-trader-refuelThreshold').value) || 50,
+    repairThreshold: parseInt(document.getElementById('set-trader-repairThreshold').value) || 40,
+    homeSystem: document.getElementById('set-trader-homeSystem').value.trim(),
+  };
+  send({ type: 'saveSettings', routine: 'trader', settings: s });
+  settings.trader = s;
 }
 
 // ── Chat bot select ────────────────────────────────────────
@@ -4334,7 +4834,7 @@ let missionsSelectedBot = null;
 let activeMissionsCache = {};
 let factionSelectedBot = null;
 let factionData = null; // cached faction_info result
-let factionActivePanel = 'overview'; // overview | members | storage | diplomacy | intel
+let factionActivePanel = 'overview'; // overview | members | storage | facilities | diplomacy | intel | rooms | missions
 
 function renderMissionsPage() {
   renderMissionsSidebar();
@@ -4712,7 +5212,7 @@ function renderFactionContent(username) {
   const leader = f.leader || f.owner || '';
 
   // Panel navigation tabs
-  const panels = ['overview', 'members', 'storage', 'facilities', 'diplomacy', 'intel'];
+  const panels = ['overview', 'members', 'storage', 'facilities', 'rooms', 'missions', 'diplomacy', 'intel'];
   const panelNav = panels.map(p => {
     const active = factionActivePanel === p ? ' active' : '';
     const label = p.charAt(0).toUpperCase() + p.slice(1);
@@ -4732,6 +5232,12 @@ function renderFactionContent(username) {
       break;
     case 'facilities':
       panelHtml = renderFactionFacilities(f, username);
+      break;
+    case 'rooms':
+      panelHtml = renderFactionRooms(f, username);
+      break;
+    case 'missions':
+      panelHtml = renderFactionMissions(f, username);
       break;
     case 'diplomacy':
       panelHtml = renderFactionDiplomacy(f, username);
@@ -4784,10 +5290,20 @@ function renderFactionOverview(f, username) {
         <button class="sm" onclick="factionExec('${esc(username)}','faction_info')">Refresh</button>
         <button class="sm" onclick="factionDepositCredits('${esc(username)}')">Deposit Credits</button>
         <button class="sm" onclick="factionWithdrawCredits('${esc(username)}')">Withdraw Credits</button>
+        <button class="sm" onclick="factionSendGift('${esc(username)}')">Send Gift</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <input type="number" id="faction-credits-amt" value="100" min="1" style="width:100px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
-        <span style="color:var(--text-dim);font-size:11px">credits for deposit/withdraw</span>
+        <span style="color:var(--text-dim);font-size:11px">credits for deposit/withdraw/gift</span>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Edit Faction</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="faction-edit-desc" placeholder="New description" value="${esc(desc)}" style="flex:1;min-width:200px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+          <button class="sm" onclick="factionEditDesc('${esc(username)}')">Update Description</button>
+        </div>
       </div>
     </div>
   `;
@@ -4956,6 +5472,266 @@ function renderFactionIntel(f, username) {
       <div id="factionTradeIntel"><button class="sm" onclick="fetchFactionTradeIntel('${esc(username)}')">Load Trade Intel</button></div>
     </div>
   `;
+}
+
+// ── Faction Rooms ────────────────────────────────────────────
+
+let factionRoomsCache = null;
+let factionCurrentRoom = null;
+
+function renderFactionRooms(f, username) {
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Faction Rooms</div>
+      <div id="factionRoomsList">
+        <button class="sm" onclick="fetchFactionRooms('${esc(username)}')">Load Rooms</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Create Room</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="faction-room-name" placeholder="Room name" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;flex:1;min-width:120px">
+        <input type="text" id="faction-room-desc" placeholder="Description (optional)" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;flex:1;min-width:120px">
+      </div>
+    </div>
+    <div id="factionRoomView" style="margin-top:16px"></div>
+  `;
+}
+
+function fetchFactionRooms(username) {
+  const container = document.getElementById('factionRoomsList');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading rooms...</div>';
+  sendExec(username, 'faction_rooms', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = '<div class="faction-no-data">' + esc(result.error || 'No rooms found') + '</div>';
+      return;
+    }
+    const d = result.data;
+    const rooms = Array.isArray(d) ? d : (Array.isArray(d.rooms) ? d.rooms : []);
+    factionRoomsCache = rooms;
+    if (rooms.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No rooms yet. Create one below.</div>';
+      return;
+    }
+    container.innerHTML = rooms.map(r => {
+      const name = r.name || r.room_name || r.id || '?';
+      const rid = r.room_id || r.id || r.name || '';
+      const desc = r.description || r.topic || '';
+      const author = r.created_by || r.author || '';
+      return `<div class="faction-card" style="cursor:pointer;margin-bottom:4px" onclick="visitFactionRoom('${esc(username)}','${esc(rid)}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span class="fc-name">${esc(name)}</span>
+            ${desc ? `<span style="color:var(--text-dim);margin-left:8px;font-size:11px">${esc(desc)}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:4px;align-items:center">
+            ${author ? `<span style="color:var(--text-dim);font-size:10px">by ${esc(author)}</span>` : ''}
+            <button class="sm" style="font-size:10px;padding:2px 6px;background:var(--red);border:none;color:#fff" onclick="event.stopPropagation();deleteFactionRoom('${esc(username)}','${esc(rid)}','${esc(name)}')">Delete</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function visitFactionRoom(username, roomId) {
+  const view = document.getElementById('factionRoomView');
+  if (!view) return;
+  factionCurrentRoom = roomId;
+  view.innerHTML = '<div class="faction-no-data">Loading room...</div>';
+  sendExec(username, 'faction_visit_room', { room_id: roomId, room: roomId }, (result) => {
+    if (!result.ok || !result.data) {
+      view.innerHTML = '<div class="faction-no-data">' + esc(result.error || 'Could not load room') + '</div>';
+      return;
+    }
+    const d = result.data;
+    const name = d.name || d.room_name || roomId;
+    const messages = Array.isArray(d.messages) ? d.messages : (Array.isArray(d.posts) ? d.posts : Array.isArray(d.content) ? d.content : []);
+    const content = d.content || d.text || '';
+
+    let msgsHtml = '';
+    if (messages.length > 0) {
+      msgsHtml = messages.map(m => {
+        const author = m.author || m.username || m.from || '?';
+        const text = m.content || m.message || m.text || '';
+        const time = m.timestamp || m.created_at || m.time || '';
+        return `<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:12px">
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--accent);font-weight:500">${esc(author)}</span>
+            ${time ? `<span style="color:var(--text-dim);font-size:10px">${esc(String(time))}</span>` : ''}
+          </div>
+          <div style="color:var(--text);margin-top:2px;white-space:pre-wrap">${esc(text)}</div>
+        </div>`;
+      }).join('');
+    } else if (content) {
+      msgsHtml = `<div style="color:var(--text);font-size:12px;white-space:pre-wrap">${esc(typeof content === 'string' ? content : JSON.stringify(content, null, 2))}</div>`;
+    } else {
+      msgsHtml = '<div class="faction-no-data">Room is empty</div>';
+    }
+
+    view.innerHTML = `
+      <div class="faction-section">
+        <div class="faction-section-title">${esc(name)}</div>
+        <div class="faction-card" style="max-height:300px;overflow-y:auto">${msgsHtml}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input type="text" id="faction-room-msg" placeholder="Write a message..." style="flex:1;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px"
+            onkeydown="if(event.key==='Enter'){writeFactionRoom('${esc(username)}','${esc(roomId)}')}">
+          <button class="primary sm" onclick="writeFactionRoom('${esc(username)}','${esc(roomId)}')">Send</button>
+        </div>
+      </div>
+    `;
+  });
+}
+
+function writeFactionRoom(username, roomId) {
+  const input = document.getElementById('faction-room-msg');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  sendExec(username, 'faction_write_room', { room_id: roomId, room: roomId, content: msg, message: msg }, (result) => {
+    if (result.ok) {
+      visitFactionRoom(username, roomId);
+    } else {
+      appendLine('system', 'Write to room failed: ' + (result.error || 'unknown'));
+    }
+  });
+}
+
+function deleteFactionRoom(username, roomId, roomName) {
+  if (!confirm('Delete room "' + roomName + '"?')) return;
+  sendExec(username, 'faction_delete_room', { room_id: roomId, room: roomId }, (result) => {
+    if (result.ok) {
+      appendLine('system', username + ': Room "' + roomName + '" deleted');
+      fetchFactionRooms(username);
+      const view = document.getElementById('factionRoomView');
+      if (view) view.innerHTML = '';
+    } else {
+      appendLine('system', 'Delete room failed: ' + (result.error || 'unknown'));
+    }
+  });
+}
+
+// ── Faction Missions ─────────────────────────────────────────
+
+let factionMissionsCache = null;
+
+function renderFactionMissions(f, username) {
+  return `
+    <div class="faction-section">
+      <div class="faction-section-title">Faction Missions</div>
+      <div id="factionMissionsList">
+        <button class="sm" onclick="fetchFactionMissions('${esc(username)}')">Load Missions</button>
+      </div>
+    </div>
+    <div class="faction-section" style="margin-top:16px">
+      <div class="faction-section-title">Post New Mission</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input type="text" id="faction-mission-title" placeholder="Mission title" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+        <textarea id="faction-mission-desc" placeholder="Mission description / objectives" rows="3" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="faction-mission-reward" placeholder="Reward (credits)" min="0" style="width:140px;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+          <select id="faction-mission-type" style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px">
+            <option value="">Type (optional)</option>
+            <option value="delivery">Delivery</option>
+            <option value="mining">Mining</option>
+            <option value="combat">Combat</option>
+            <option value="exploration">Exploration</option>
+            <option value="crafting">Crafting</option>
+            <option value="other">Other</option>
+          </select>
+          <button class="primary sm" onclick="postFactionMission('${esc(username)}')">Post Mission</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function fetchFactionMissions(username) {
+  const container = document.getElementById('factionMissionsList');
+  if (!container) return;
+  container.innerHTML = '<div class="faction-no-data">Loading missions...</div>';
+  sendExec(username, 'faction_list_missions', undefined, (result) => {
+    if (!result.ok || !result.data) {
+      container.innerHTML = '<div class="faction-no-data">' + esc(result.error || 'No missions found') + '</div>';
+      return;
+    }
+    const d = result.data;
+    const missions = Array.isArray(d) ? d : (Array.isArray(d.missions) ? d.missions : []);
+    factionMissionsCache = missions;
+    if (missions.length === 0) {
+      container.innerHTML = '<div class="faction-no-data">No active faction missions. Post one below.</div>';
+      return;
+    }
+    container.innerHTML = missions.map(m => {
+      const title = m.title || m.name || m.mission_name || 'Untitled';
+      const mid = m.mission_id || m.id || '';
+      const desc = m.description || m.desc || m.objective || '';
+      const reward = m.reward ?? m.credits ?? m.payout ?? '';
+      const rewardStr = reward ? Number(reward).toLocaleString() + 'cr' : '';
+      const mtype = m.type || m.mission_type || '';
+      const status = m.status || '';
+      const poster = m.posted_by || m.creator || m.author || '';
+      const assignee = m.assigned_to || m.assignee || '';
+      const statusColor = status === 'completed' ? 'var(--green)' : status === 'active' || status === 'in_progress' ? 'var(--accent)' : 'var(--text-dim)';
+
+      return `<div class="faction-card" style="margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="fc-name">${esc(title)}</span>
+              ${mtype ? `<span style="font-size:10px;padding:1px 6px;background:#1a2332;color:var(--accent);border-radius:3px">${esc(mtype)}</span>` : ''}
+              ${status ? `<span style="font-size:10px;color:${statusColor}">${esc(status)}</span>` : ''}
+            </div>
+            ${desc ? `<div style="color:var(--text-dim);font-size:11px;margin-top:4px">${esc(desc)}</div>` : ''}
+            <div style="display:flex;gap:12px;margin-top:4px;font-size:11px">
+              ${rewardStr ? `<span style="color:var(--yellow)">Reward: ${esc(rewardStr)}</span>` : ''}
+              ${poster ? `<span style="color:var(--text-dim)">Posted by: ${esc(poster)}</span>` : ''}
+              ${assignee ? `<span style="color:var(--cyan)">Assigned: ${esc(assignee)}</span>` : ''}
+            </div>
+          </div>
+          <button class="sm" style="font-size:10px;padding:2px 6px;background:var(--red);border:none;color:#fff;margin-left:8px" onclick="cancelFactionMission('${esc(username)}','${esc(mid)}','${esc(title)}')">Cancel</button>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function postFactionMission(username) {
+  const title = document.getElementById('faction-mission-title')?.value?.trim();
+  const desc = document.getElementById('faction-mission-desc')?.value?.trim();
+  const reward = parseInt(document.getElementById('faction-mission-reward')?.value) || 0;
+  const mtype = document.getElementById('faction-mission-type')?.value || '';
+  if (!title) { appendLine('system', 'Mission title required'); return; }
+
+  const params = { title, description: desc || title, name: title };
+  if (reward > 0) params.reward = reward;
+  if (mtype) params.type = mtype;
+
+  sendExec(username, 'faction_post_mission', params, (result) => {
+    if (result.ok) {
+      appendLine('system', username + ': Posted faction mission "' + title + '"');
+      document.getElementById('faction-mission-title').value = '';
+      document.getElementById('faction-mission-desc').value = '';
+      document.getElementById('faction-mission-reward').value = '';
+      fetchFactionMissions(username);
+    } else {
+      appendLine('system', 'Post mission failed: ' + (result.error || 'unknown'));
+    }
+  });
+}
+
+function cancelFactionMission(username, missionId, title) {
+  if (!confirm('Cancel mission "' + title + '"?')) return;
+  sendExec(username, 'faction_cancel_mission', { mission_id: missionId, id: missionId }, (result) => {
+    if (result.ok) {
+      appendLine('system', username + ': Cancelled mission "' + title + '"');
+      fetchFactionMissions(username);
+    } else {
+      appendLine('system', 'Cancel mission failed: ' + (result.error || 'unknown'));
+    }
+  });
 }
 
 // ── Faction actions ──────────────────────────────────────────
@@ -5528,6 +6304,33 @@ function factionAutoAccept(username) {
         appendLine('system', `${username} auto-accept failed: ${jr.error || 'unknown'}`);
       }
     });
+  });
+}
+
+function factionSendGift(username) {
+  const amt = parseInt(document.getElementById('faction-credits-amt')?.value) || 100;
+  const targetInput = prompt('Recipient username:');
+  if (!targetInput) return;
+  sendExec(username, 'faction_gift', { recipient: targetInput, credits: amt, amount: amt, player_id: targetInput }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username} gifted ${amt}cr to ${targetInput}`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Gift failed: ${result.error || 'unknown'}`);
+    }
+  });
+}
+
+function factionEditDesc(username) {
+  const desc = document.getElementById('faction-edit-desc')?.value?.trim();
+  if (!desc) { appendLine('system', 'Enter a description first'); return; }
+  sendExec(username, 'faction_edit', { description: desc }, (result) => {
+    if (result.ok) {
+      appendLine('system', `${username}: Faction description updated`);
+      fetchFactionInfo(username);
+    } else {
+      appendLine('system', `Edit faction failed: ${result.error || 'unknown'}`);
+    }
   });
 }
 

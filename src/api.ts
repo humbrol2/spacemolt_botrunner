@@ -127,6 +127,10 @@ export class SpaceMoltAPI {
           } else {
             log("system", "Logged in successfully");
           }
+          // Login may return a new session — capture it
+          if (loginResp.session) {
+            this.session = loginResp.session;
+          }
         }
         return;
       } catch (err) {

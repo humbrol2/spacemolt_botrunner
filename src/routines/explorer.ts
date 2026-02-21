@@ -16,8 +16,10 @@ import {
   repairShip,
   ensureFueled,
   depositCargoAtHome,
+  navigateToSystem,
   fetchSecurityLevel,
   scavengeWrecks,
+  readSettings,
   sleep,
 } from "./common.js";
 
@@ -28,10 +30,110 @@ const FUEL_SAFETY_PCT = 40;
 /** Minimum fuel % required before attempting a system jump. */
 const JUMP_FUEL_PCT = 70;
 
+// ── Mission helpers ───────────────────────────────────────────
+
+const EXPLORER_MISSION_KEYWORDS = [
+  "explore", "survey", "scan", "chart", "discover", "map", "navigate",
+  "visit", "investigate", "reconnaissance", "recon", "scout", "patrol",
+  "deliver", "supply", "collect",
+];
+
+/** Accept available exploration missions at the current station. Respects 5-mission cap. */
+async function checkAndAcceptMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  const activeResp = await bot.exec("get_active_missions");
+  let activeCount = 0;
+  if (activeResp.result && typeof activeResp.result === "object") {
+    const r = activeResp.result as Record<string, unknown>;
+    const list = Array.isArray(r) ? r : Array.isArray(r.missions) ? r.missions : [];
+    activeCount = (list as unknown[]).length;
+  }
+  if (activeCount >= 5) return;
+
+  const availResp = await bot.exec("get_missions");
+  if (!availResp.result || typeof availResp.result !== "object") return;
+  const r = availResp.result as Record<string, unknown>;
+  const available = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions : []
+  ) as Array<Record<string, unknown>>;
+
+  for (const mission of available) {
+    if (activeCount >= 5) break;
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+    const name = ((mission.name as string) || "").toLowerCase();
+    const desc = ((mission.description as string) || "").toLowerCase();
+    const type = ((mission.type as string) || "").toLowerCase();
+    const isExplorerMission = EXPLORER_MISSION_KEYWORDS.some(kw =>
+      name.includes(kw) || desc.includes(kw) || type.includes(kw)
+    );
+    if (!isExplorerMission) continue;
+    const acceptResp = await bot.exec("accept_mission", { mission_id: missionId });
+    if (!acceptResp.error) {
+      activeCount++;
+      ctx.log("info", `Mission accepted: ${(mission.name as string) || missionId} (${activeCount}/5 active)`);
+    }
+  }
+}
+
+/** Complete any active missions while docked. */
+async function completeActiveMissions(ctx: RoutineContext): Promise<void> {
+  const { bot } = ctx;
+  if (!bot.docked) return;
+
+  const activeResp = await bot.exec("get_active_missions");
+  if (!activeResp.result || typeof activeResp.result !== "object") return;
+  const r = activeResp.result as Record<string, unknown>;
+  const missions = (
+    Array.isArray(r) ? r :
+    Array.isArray(r.missions) ? r.missions : []
+  ) as Array<Record<string, unknown>>;
+
+  for (const mission of missions) {
+    const missionId = (mission.id as string) || (mission.mission_id as string) || "";
+    if (!missionId) continue;
+    const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+    if (!completeResp.error) {
+      const reward = (mission.reward as number) || (mission.reward_credits as number) || 0;
+      ctx.log("trade", `Mission complete: ${(mission.name as string) || missionId}${reward > 0 ? ` (+${reward} credits)` : ""}`);
+      await bot.refreshStatus();
+    }
+  }
+}
+
 /** Minutes before a station's market/orders/missions data is considered stale. */
 const STATION_REFRESH_MINS = 30;
 /** Minutes before a resource POI should be re-sampled. */
 const RESOURCE_REFRESH_MINS = 120;
+
+// ── Per-bot settings ─────────────────────────────────────────
+
+export type ExplorerMode = "explore" | "trade_update";
+
+function getExplorerSettings(username?: string): {
+  mode: ExplorerMode;
+  acceptMissions: boolean;
+} {
+  const all = readSettings();
+  const botOverrides = username ? (all[username] || {}) : {};
+  const mode = (botOverrides.explorerMode as string) || "explore";
+  const e = all.explorer || {};
+
+  // acceptMissions: per-bot > global explorer > default true
+  const acceptMissions = botOverrides.acceptMissions !== undefined
+    ? Boolean(botOverrides.acceptMissions)
+    : e.acceptMissions !== undefined
+      ? Boolean(e.acceptMissions)
+      : true;
+
+  return {
+    mode: (mode === "trade_update" ? "trade_update" : "explore") as ExplorerMode,
+    acceptMissions,
+  };
+}
 
 /**
  * Explorer routine — systematically maps the galaxy:
@@ -46,6 +148,14 @@ const RESOURCE_REFRESH_MINS = 120;
  */
 export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
   const { bot } = ctx;
+
+  // Check per-bot mode
+  const initialSettings = getExplorerSettings(bot.username);
+  if (initialSettings.mode === "trade_update") {
+    yield* tradeUpdateRoutine(ctx);
+    return;
+  }
+
   const visitedSystems = new Set<string>();
 
   // ── Startup: dock at local station to clear cargo & refuel ──
@@ -119,9 +229,9 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
     yield "scan_system";
     await bot.refreshStatus();
     const fuelPct = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
-    ctx.log("info", `=== Exploring ${bot.system} | Credits: ${bot.credits} | Fuel: ${fuelPct}% | Cargo: ${bot.cargo}/${bot.cargoMax} ===`);
+    ctx.log("info", `Exploring ${bot.system} — ${bot.credits} cr, ${fuelPct}% fuel, ${bot.cargo}/${bot.cargoMax} cargo`);
 
-    const { pois, connections, systemId } = await getSystemInfo(ctx);
+    let { pois, connections, systemId } = await getSystemInfo(ctx);
     if (!systemId) {
       ctx.log("error", "Could not determine current system — waiting 30s");
       await sleep(30000);
@@ -131,6 +241,26 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
 
     // Try to capture security level
     await fetchSecurityLevel(ctx, systemId);
+
+    // ── Survey the system to reveal hidden POIs ──
+    yield "survey_system";
+    const surveyResp = await bot.exec("survey_system");
+    if (!surveyResp.error) {
+      ctx.log("info", `Surveyed ${bot.system} — checking for newly revealed POIs...`);
+      // Re-fetch system info to pick up any hidden POIs that were revealed
+      const refreshed = await getSystemInfo(ctx);
+      if (refreshed.pois.length > pois.length) {
+        ctx.log("info", `Survey revealed ${refreshed.pois.length - pois.length} new POI(s)!`);
+      }
+      pois = refreshed.pois;
+      connections = refreshed.connections;
+    } else {
+      const msg = surveyResp.error.message.toLowerCase();
+      // Don't log for expected errors like "already surveyed" or skill-related
+      if (!msg.includes("already") && !msg.includes("cooldown")) {
+        ctx.log("info", `Survey: ${surveyResp.error.message}`);
+      }
+    }
 
     // ── Classify POIs and determine what needs visiting ──
     const toVisit: Array<{ poi: SystemPOI; reason: string }> = [];
@@ -160,10 +290,10 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       }
     }
 
-    ctx.log("info", `System ${systemId}: ${toVisit.length} POIs to visit, ${skippedCount} already explored`);
-
     if (toVisit.length === 0) {
-      ctx.log("info", "All POIs in this system are up to date — moving on");
+      ctx.log("info", `${bot.system}: all ${skippedCount} POIs up to date — moving on`);
+    } else {
+      ctx.log("info", `${bot.system}: ${toVisit.length} to visit, ${skippedCount} already explored`);
     }
 
     // ── Hull check — repair if <= 40% ──
@@ -222,8 +352,6 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       await ensureUndocked(ctx);
 
       yield `visit_${poi.id}`;
-      const tag = reason === "new" ? "" : ` [${reason}]`;
-      ctx.log("travel", `Traveling to ${poi.name} [${poi.type}]${tag}...`);
       const travelResp = await bot.exec("travel", { target_poi: poi.id });
       if (travelResp.error && !travelResp.error.message.includes("already")) {
         ctx.log("error", `Travel to ${poi.name} failed: ${travelResp.error.message}`);
@@ -329,7 +457,7 @@ export const explorerRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
-    ctx.log("info", `=== Arrived in ${nextSystem.name || nextSystem.id} ===`);
+    ctx.log("travel", `Jumped to ${nextSystem.name || nextSystem.id}`);
   }
 };
 
@@ -343,7 +471,6 @@ async function* sampleResourcePoi(
 ): AsyncGenerator<string, void, void> {
   const { bot } = ctx;
   yield `sample_${poi.id}`;
-  ctx.log("mining", `Sampling resources at ${poi.name} [${poi.type}]...`);
   const oresFound = new Set<string>();
   let mined = 0;
   let cantMine = false;
@@ -353,25 +480,13 @@ async function* sampleResourcePoi(
 
     if (mineResp.error) {
       const msg = mineResp.error.message.toLowerCase();
-      if (msg.includes("no asteroids") || msg.includes("depleted") || msg.includes("no minable") || msg.includes("nothing to mine")) {
-        ctx.log("mining", `${poi.name}: depleted after ${mined} samples`);
-        break;
-      }
-      if (msg.includes("cargo") && msg.includes("full")) {
-        ctx.log("mining", "Cargo full — will deposit at station");
-        break;
-      }
-      if (mined === 0) {
-        cantMine = true;
-        ctx.log("mining", `${poi.name}: cannot mine here (${mineResp.error.message}) — leaving unmarked`);
-      } else {
-        ctx.log("error", `Mine error at ${poi.name}: ${mineResp.error.message}`);
-      }
+      if (msg.includes("no asteroids") || msg.includes("depleted") || msg.includes("no minable") || msg.includes("nothing to mine")) break;
+      if (msg.includes("cargo") && msg.includes("full")) break;
+      if (mined === 0) cantMine = true;
       break;
     }
 
     mined++;
-
     const { oreId, oreName } = parseOreFromMineResult(mineResp.result);
     if (oreId) {
       mapStore.recordMiningYield(systemId, poi.id, { item_id: oreId, name: oreName });
@@ -381,10 +496,9 @@ async function* sampleResourcePoi(
     yield "sampling";
   }
 
+  // Single summary line
   if (oresFound.size > 0) {
-    ctx.log("mining", `${poi.name}: found ${[...oresFound].join(", ")}`);
-  } else if (mined === 0 && !cantMine) {
-    ctx.log("mining", `${poi.name}: no resources available`);
+    ctx.log("mining", `Sampled ${poi.name}: ${[...oresFound].join(", ")} (${mined} cycles)`);
   }
 
   if (!cantMine) {
@@ -401,7 +515,6 @@ async function* scanStation(
   const { bot } = ctx;
 
   yield `dock_${poi.id}`;
-  ctx.log("system", `Docking at ${poi.name}...`);
   const dockResp = await bot.exec("dock");
   if (dockResp.error && !dockResp.error.message.includes("already")) {
     ctx.log("error", `Dock failed at ${poi.name}: ${dockResp.error.message}`);
@@ -409,12 +522,20 @@ async function* scanStation(
   }
   bot.docked = true;
 
-  // Collect gifted credits/items from storage
   await collectFromStorage(ctx);
 
-  // Scan market
-  yield `market_${poi.id}`;
-  ctx.log("trade", `Scanning market at ${poi.name}...`);
+  // Complete active missions (while cargo still intact from exploration)
+  const stationSettings = getExplorerSettings(bot.username);
+  if (stationSettings.acceptMissions) {
+    yield `complete_missions_${poi.id}`;
+    await completeActiveMissions(ctx);
+  }
+
+  // Scan market, orders, missions — collect stats for summary
+  yield `scan_${poi.id}`;
+  let marketCount = 0;
+  let missionCount = 0;
+
   const marketResp = await bot.exec("view_market");
   if (marketResp.result && typeof marketResp.result === "object") {
     mapStore.updateMarket(systemId, poi.id, marketResp.result as Record<string, unknown>);
@@ -425,30 +546,9 @@ async function* scanStation(
       Array.isArray(result.market) ? result.market :
       []
     ) as unknown[];
-    ctx.log("trade", `Market: ${items.length} items recorded`);
+    marketCount = items.length;
   }
 
-  // Scan orders
-  yield `orders_${poi.id}`;
-  const ordersResp = await bot.exec("view_orders");
-  if (ordersResp.result && typeof ordersResp.result === "object") {
-    const ordersData = ordersResp.result as Record<string, unknown>;
-    const orders = (
-      Array.isArray(ordersData) ? ordersData :
-      Array.isArray(ordersData.orders) ? ordersData.orders :
-      Array.isArray(ordersData.buy_orders) || Array.isArray(ordersData.sell_orders)
-        ? [...(ordersData.buy_orders as unknown[] || []), ...(ordersData.sell_orders as unknown[] || [])]
-        : []
-    ) as Array<Record<string, unknown>>;
-    if (orders.length > 0) {
-      mapStore.updateOrders(systemId, poi.id, orders);
-      ctx.log("trade", `Orders: ${orders.length} player orders recorded`);
-    }
-  }
-
-  // Scan missions
-  yield `missions_${poi.id}`;
-  ctx.log("info", `Scanning missions at ${poi.name}...`);
   const missionsResp = await bot.exec("get_missions");
   if (missionsResp.result && typeof missionsResp.result === "object") {
     const mData = missionsResp.result as Record<string, unknown>;
@@ -461,11 +561,15 @@ async function* scanStation(
     ) as Array<Record<string, unknown>>;
     if (missions.length > 0) {
       mapStore.updateMissions(systemId, poi.id, missions);
-      ctx.log("info", `Missions: ${missions.length} available`);
-    } else {
-      ctx.log("info", "No missions available");
+      missionCount = missions.length;
     }
   }
+
+  // Station scan summary
+  const scanParts: string[] = [];
+  if (marketCount > 0) scanParts.push(`${marketCount} market items`);
+  if (missionCount > 0) scanParts.push(`${missionCount} missions`);
+  ctx.log("info", `Scanned ${poi.name}: ${scanParts.length > 0 ? scanParts.join(", ") : "empty station"}`);
 
   // Refuel
   yield `refuel_${poi.id}`;
@@ -477,6 +581,7 @@ async function* scanStation(
 
   // Deposit non-fuel cargo to station storage
   yield `deposit_${poi.id}`;
+  const depositedItems: string[] = [];
   const cargoResp = await bot.exec("get_cargo");
   if (cargoResp.result && typeof cargoResp.result === "object") {
     const cResult = cargoResp.result as Record<string, unknown>;
@@ -491,20 +596,27 @@ async function* scanStation(
       const itemId = (item.item_id as string) || "";
       const quantity = (item.quantity as number) || 0;
       if (!itemId || quantity <= 0) continue;
-      // Keep fuel cells for emergency use
       const lower = itemId.toLowerCase();
       if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
 
       const displayName = (item.name as string) || itemId;
-      ctx.log("trade", `Depositing ${quantity}x ${displayName} to storage...`);
       await bot.exec("deposit_items", { item_id: itemId, quantity });
+      depositedItems.push(`${quantity}x ${displayName}`);
       yield "depositing";
     }
+  }
+  if (depositedItems.length > 0) {
+    ctx.log("trade", `Deposited ${depositedItems.join(", ")} to storage`);
+  }
+
+  // Accept new exploration missions before leaving
+  if (stationSettings.acceptMissions) {
+    yield `accept_missions_${poi.id}`;
+    await checkAndAcceptMissions(ctx);
   }
 
   // Undock
   yield `undock_${poi.id}`;
-  ctx.log("system", "Undocking...");
   await bot.exec("undock");
   bot.docked = false;
 
@@ -520,17 +632,203 @@ async function* visitOtherPoi(
   const { bot } = ctx;
 
   yield `scan_${poi.id}`;
-  ctx.log("info", `Visited ${poi.name} [${poi.type}]`);
   const nearbyResp = await bot.exec("get_nearby");
   if (nearbyResp.result && typeof nearbyResp.result === "object") {
     const nr = nearbyResp.result as Record<string, unknown>;
     const objects = (nr.objects || nr.results || nr.ships || nr.players || []) as unknown[];
     if (objects.length > 0) {
-      ctx.log("info", `Nearby: ${objects.length} objects detected`);
+      ctx.log("info", `Visited ${poi.name}: ${objects.length} objects nearby`);
     }
   }
 
   mapStore.markExplored(systemId, poi.id);
+}
+
+// ── Trade Update routine ─────────────────────────────────────
+
+/**
+ * Trade update mode — cycles through known systems with stations,
+ * refreshing market/orders/missions data. Stays in known space.
+ */
+async function* tradeUpdateRoutine(ctx: RoutineContext): AsyncGenerator<string, void, void> {
+  const { bot } = ctx;
+
+  await bot.refreshStatus();
+  const homeSystem = bot.system;
+
+  ctx.log("system", "Trade Update mode — cycling known stations to refresh market data...");
+
+  // ── Startup: dock, refuel, deposit cargo ──
+  yield "startup_prep";
+  const { pois: startPois } = await getSystemInfo(ctx);
+  const startStation = findStation(startPois);
+  if (startStation) {
+    if (bot.poi !== startStation.id) {
+      await ensureUndocked(ctx);
+      await bot.exec("travel", { target_poi: startStation.id });
+    }
+    await ensureDocked(ctx);
+    await collectFromStorage(ctx);
+    await tryRefuel(ctx);
+    await bot.refreshStatus();
+  }
+
+  while (bot.state === "running") {
+    // Re-read settings each cycle — user might switch mode mid-run
+    const modeCheck = getExplorerSettings(bot.username);
+    if (modeCheck.mode !== "trade_update") {
+      ctx.log("system", "Mode changed to explore — restarting as explorer...");
+      break;
+    }
+
+    // ── Build list of known systems with stations, sorted by stalest market data ──
+    yield "plan_route";
+    const allSystems = mapStore.getAllSystems();
+    const stationSystems: Array<{ systemId: string; systemName: string; stationPoi: string; stationName: string; staleMins: number }> = [];
+
+    for (const [sysId, sys] of Object.entries(allSystems)) {
+      for (const poi of sys.pois) {
+        if (!poi.has_base) continue;
+        // Find the stalest market entry, or Infinity if no market data
+        let oldestMins = Infinity;
+        if (poi.market && poi.market.length > 0) {
+          for (const m of poi.market) {
+            if (m.last_updated) {
+              const mins = (Date.now() - new Date(m.last_updated).getTime()) / 60000;
+              if (mins < oldestMins) oldestMins = mins;
+            }
+          }
+        }
+        stationSystems.push({
+          systemId: sysId,
+          systemName: sys.name,
+          stationPoi: poi.id,
+          stationName: poi.name,
+          staleMins: oldestMins,
+        });
+      }
+    }
+
+    // Sort: stalest data first (or no data = Infinity first)
+    stationSystems.sort((a, b) => b.staleMins - a.staleMins);
+
+    if (stationSystems.length === 0) {
+      ctx.log("info", "No known stations on map — run an explorer in 'explore' mode first. Waiting 60s...");
+      await sleep(60000);
+      continue;
+    }
+
+    ctx.log("info", `Found ${stationSystems.length} known stations to update`);
+
+    // ── Visit each station ──
+    for (const target of stationSystems) {
+      if (bot.state !== "running") break;
+
+      // Re-check mode
+      const mc = getExplorerSettings(bot.username);
+      if (mc.mode !== "trade_update") {
+        ctx.log("system", "Mode changed — stopping trade update loop");
+        break;
+      }
+
+      // Skip if recently updated (< 15 mins)
+      const freshCheck = mapStore.minutesSinceExplored(target.systemId, target.stationPoi);
+      if (freshCheck < 15) {
+        continue;
+      }
+
+      // ── Navigate to target system if needed ──
+      yield "fuel_check";
+      const fueled = await ensureFueled(ctx, FUEL_SAFETY_PCT);
+      if (!fueled) {
+        ctx.log("error", "Cannot refuel — waiting 30s...");
+        await sleep(30000);
+        continue;
+      }
+
+      if (target.systemId !== bot.system) {
+        yield "navigate";
+        await ensureUndocked(ctx);
+        const arrived = await navigateToSystem(ctx, target.systemId, { fuelThresholdPct: FUEL_SAFETY_PCT, hullThresholdPct: 30 });
+        if (!arrived) {
+          ctx.log("error", `Could not reach ${target.systemName} — skipping`);
+          continue;
+        }
+      }
+
+      if (bot.state !== "running") break;
+
+      // ── Travel to station POI ──
+      yield "travel_to_station";
+      await ensureUndocked(ctx);
+      const tResp = await bot.exec("travel", { target_poi: target.stationPoi });
+      if (tResp.error && !tResp.error.message.includes("already")) {
+        ctx.log("error", `Travel failed: ${tResp.error.message}`);
+        continue;
+      }
+      bot.poi = target.stationPoi;
+
+      // ── Scavenge wrecks en route ──
+      yield "scavenge";
+      await scavengeWrecks(ctx);
+
+      // ── Dock and scan ──
+      yield "scan_station";
+      const sysPois = (await getSystemInfo(ctx)).pois;
+      const stPoi = sysPois.find(p => p.id === target.stationPoi);
+      if (stPoi) {
+        yield* scanStation(ctx, target.systemId, stPoi);
+      } else {
+        // POI not found in live data — try docking anyway
+        const dResp = await bot.exec("dock");
+        if (!dResp.error || dResp.error.message.includes("already")) {
+          bot.docked = true;
+          await collectFromStorage(ctx);
+
+          const marketResp = await bot.exec("view_market");
+          if (marketResp.result && typeof marketResp.result === "object") {
+            mapStore.updateMarket(target.systemId, target.stationPoi, marketResp.result as Record<string, unknown>);
+          }
+
+          const missResp = await bot.exec("get_missions");
+          if (missResp.result && typeof missResp.result === "object") {
+            const mData = missResp.result as Record<string, unknown>;
+            const missions = (
+              Array.isArray(mData) ? mData :
+              Array.isArray(mData.missions) ? mData.missions :
+              Array.isArray(mData.available) ? mData.available :
+              []
+            ) as Array<Record<string, unknown>>;
+            if (missions.length > 0) mapStore.updateMissions(target.systemId, target.stationPoi, missions);
+          }
+
+          await tryRefuel(ctx);
+          await bot.exec("undock");
+          bot.docked = false;
+          mapStore.markExplored(target.systemId, target.stationPoi);
+          ctx.log("info", `Updated ${target.stationName} in ${target.systemName}`);
+        }
+      }
+
+      // ── Deposit cargo if getting full ──
+      await bot.refreshStatus();
+      if (bot.cargoMax > 0 && bot.cargo >= bot.cargoMax) {
+        yield "deposit_cargo";
+        await depositCargoAtHome(ctx, { fuelThresholdPct: FUEL_SAFETY_PCT, hullThresholdPct: 30 });
+      }
+
+      // ── Check skills ──
+      yield "check_skills";
+      await bot.checkSkills();
+
+      await bot.refreshStatus();
+    }
+
+    await bot.refreshStatus();
+    const cycleFuel = bot.maxFuel > 0 ? Math.round((bot.fuel / bot.maxFuel) * 100) : 100;
+    ctx.log("info", `Trade update cycle done — ${stationSystems.length} stations, ${bot.credits} cr, ${cycleFuel}% fuel`);
+    await sleep(5000);
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────

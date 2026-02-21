@@ -27,6 +27,7 @@ import { mapStore } from "../mapstore.js";
 import {
   findStation,
   isStationPoi,
+  stationHasService,
   getSystemInfo,
   collectFromStorage,
   ensureDocked,
@@ -37,6 +38,7 @@ import {
   navigateToSystem,
   fetchSecurityLevel,
   scavengeWrecks,
+  depositNonFuelCargo,
   readSettings,
   sleep,
   logStatus,
@@ -333,14 +335,15 @@ async function navigateToSafeStation(ctx: RoutineContext, safetyOpts: { fuelThre
     }
   }
 
-  // Find station in current system and dock
+  // Find repair-capable station in current system and dock
   const { pois } = await getSystemInfo(ctx);
-  const station = findStation(pois);
+  const station = findStation(pois, "repair") || findStation(pois);
   if (station) {
     const tResp = await bot.exec("travel", { target_poi: station.id });
     if (tResp.error && !tResp.error.message.includes("already")) {
       ctx.log("error", `Travel to station failed: ${tResp.error.message}`);
     }
+    bot.poi = station.id;
   }
 
   const dockResp = await bot.exec("dock");
@@ -349,6 +352,7 @@ async function navigateToSafeStation(ctx: RoutineContext, safetyOpts: { fuelThre
     return false;
   }
   bot.docked = true;
+  await collectFromStorage(ctx);
   return true;
 }
 
@@ -358,6 +362,14 @@ async function navigateToSafeStation(ctx: RoutineContext, safetyOpts: { fuelThre
 async function ensureInsured(ctx: RoutineContext): Promise<void> {
   const { bot } = ctx;
   if (!bot.docked) return;
+
+  // Check if current station offers insurance before making API calls
+  const { pois } = await getSystemInfo(ctx);
+  const currentStation = pois.find(p => isStationPoi(p) && p.id === bot.poi);
+  if (currentStation && !stationHasService(currentStation, "insurance")) {
+    ctx.log("info", "Current station does not offer insurance — skipping");
+    return;
+  }
 
   const quoteResp = await bot.exec("get_insurance_quote");
   if (quoteResp.error || !quoteResp.result) return;
@@ -777,19 +789,19 @@ export const hunterRoutine: Routine = async function* (ctx: RoutineContext) {
       yield "complete_missions";
       await completeActiveMissions(ctx);
 
-      // Sell loot (everything except fuel cells)
+      // Sell loot (everything except fuel cells); fall back to deposit if sell fails
       yield "sell_loot";
       await bot.refreshCargo();
+      let unsold = false;
       for (const item of bot.inventory) {
-        if (item.itemId.toLowerCase().includes("fuel")) continue;
+        if (item.itemId.toLowerCase().includes("fuel") || item.itemId.toLowerCase().includes("energy_cell")) continue;
         ctx.log("trade", `Selling ${item.quantity}x ${item.name}...`);
         const sellResp = await bot.exec("sell", { item_id: item.itemId, quantity: item.quantity });
-        if (sellResp.error) {
-          // Fall back to storage deposit
-          await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
-        }
+        if (sellResp.error) unsold = true;
         yield "selling";
       }
+      // Deposit anything that failed to sell
+      if (unsold) await depositNonFuelCargo(ctx);
       await bot.refreshStatus();
 
       yield "check_missions";

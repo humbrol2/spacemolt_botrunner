@@ -24,6 +24,8 @@ export interface MarketRecord {
   item_name: string;
   best_buy: number | null;
   best_sell: number | null;
+  buy_quantity: number;
+  sell_quantity: number;
   last_updated: string;
 }
 
@@ -273,11 +275,17 @@ class MapStore {
       const sellPrice = item.sell_price as number ?? item.sell as number ?? null;
       const prev = existingMarket.get(itemId);
 
+      // Extract order quantities from order book data
+      const buyQty = (item.buy_quantity as number) ?? (item.buy_volume as number) ?? (item.buy_orders as number) ?? 0;
+      const sellQty = (item.sell_quantity as number) ?? (item.sell_volume as number) ?? (item.sell_orders as number) ?? 0;
+
       existingMarket.set(itemId, {
         item_id: itemId,
         item_name: (item.name as string) || (item.item_name as string) || prev?.item_name || itemId,
         best_buy: buyPrice !== null ? buyPrice : prev?.best_buy ?? null,
         best_sell: sellPrice !== null ? sellPrice : prev?.best_sell ?? null,
+        buy_quantity: buyQty > 0 ? buyQty : prev?.buy_quantity ?? 0,
+        sell_quantity: sellQty > 0 ? sellQty : prev?.sell_quantity ?? 0,
         last_updated: now(),
       });
     }
@@ -620,6 +628,114 @@ class MapStore {
     return [...ores.entries()]
       .map(([item_id, name]) => ({ item_id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Find the best buy price (highest buyer) for an item across all known markets. */
+  findBestBuyPrice(itemId: string): { systemId: string; poiId: string; poiName: string; price: number; quantity: number } | null {
+    let best: { systemId: string; poiId: string; poiName: string; price: number; quantity: number } | null = null;
+
+    for (const [sysId, sys] of Object.entries(this.data.systems)) {
+      for (const poi of sys.pois) {
+        for (const m of poi.market) {
+          if (m.item_id === itemId && m.best_buy !== null && m.buy_quantity > 0) {
+            if (!best || m.best_buy > best.price) {
+              best = { systemId: sysId, poiId: poi.id, poiName: poi.name, price: m.best_buy, quantity: m.buy_quantity };
+            }
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  /** Find all items with buy orders across all known stations. */
+  getAllBuyDemand(): Array<{ itemId: string; itemName: string; systemId: string; poiId: string; poiName: string; price: number; quantity: number }> {
+    const results: Array<{ itemId: string; itemName: string; systemId: string; poiId: string; poiName: string; price: number; quantity: number }> = [];
+
+    for (const [sysId, sys] of Object.entries(this.data.systems)) {
+      for (const poi of sys.pois) {
+        for (const m of poi.market) {
+          if (m.best_buy !== null && m.buy_quantity > 0) {
+            results.push({
+              itemId: m.item_id,
+              itemName: m.item_name,
+              systemId: sysId,
+              poiId: poi.id,
+              poiName: poi.name,
+              price: m.best_buy,
+              quantity: m.buy_quantity,
+            });
+          }
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /** Find price spreads for an item or all items between stations.
+   *  Returns opportunities where an item can be bought cheaply and sold at a higher price. */
+  findPriceSpreads(itemId?: string): Array<{
+    itemId: string; itemName: string;
+    sourceSystem: string; sourcePoi: string; sourcePoiName: string; buyAt: number; buyQty: number;
+    destSystem: string; destPoi: string; destPoiName: string; sellAt: number; sellQty: number;
+    spread: number;
+  }> {
+    // Collect all sell listings (where we can buy from NPC market)
+    const sellListings: Array<{ itemId: string; itemName: string; systemId: string; poiId: string; poiName: string; price: number; quantity: number }> = [];
+    // Collect all buy listings (where we can sell to NPC market / fill buy orders)
+    const buyListings: Array<{ itemId: string; itemName: string; systemId: string; poiId: string; poiName: string; price: number; quantity: number }> = [];
+
+    for (const [sysId, sys] of Object.entries(this.data.systems)) {
+      for (const poi of sys.pois) {
+        for (const m of poi.market) {
+          if (itemId && m.item_id !== itemId) continue;
+          if (m.best_sell !== null && m.sell_quantity > 0) {
+            sellListings.push({ itemId: m.item_id, itemName: m.item_name, systemId: sysId, poiId: poi.id, poiName: poi.name, price: m.best_sell, quantity: m.sell_quantity });
+          }
+          if (m.best_buy !== null && m.buy_quantity > 0) {
+            buyListings.push({ itemId: m.item_id, itemName: m.item_name, systemId: sysId, poiId: poi.id, poiName: poi.name, price: m.best_buy, quantity: m.buy_quantity });
+          }
+        }
+      }
+    }
+
+    const results: Array<{
+      itemId: string; itemName: string;
+      sourceSystem: string; sourcePoi: string; sourcePoiName: string; buyAt: number; buyQty: number;
+      destSystem: string; destPoi: string; destPoiName: string; sellAt: number; sellQty: number;
+      spread: number;
+    }> = [];
+
+    // Match: buy cheaply at source (sell listing), sell expensively at dest (buy listing)
+    for (const sell of sellListings) {
+      for (const buy of buyListings) {
+        if (sell.itemId !== buy.itemId) continue;
+        if (sell.systemId === buy.systemId && sell.poiId === buy.poiId) continue; // same station
+        const spread = buy.price - sell.price;
+        if (spread <= 0) continue;
+
+        results.push({
+          itemId: sell.itemId,
+          itemName: sell.itemName,
+          sourceSystem: sell.systemId,
+          sourcePoi: sell.poiId,
+          sourcePoiName: sell.poiName,
+          buyAt: sell.price,
+          buyQty: sell.quantity,
+          destSystem: buy.systemId,
+          destPoi: buy.poiId,
+          destPoiName: buy.poiName,
+          sellAt: buy.price,
+          sellQty: buy.quantity,
+          spread,
+        });
+      }
+    }
+
+    results.sort((a, b) => b.spread - a.spread);
+    return results;
   }
 
   /** Return the full systems map for the web dashboard. */
