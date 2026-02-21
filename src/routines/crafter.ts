@@ -257,8 +257,22 @@ export const crafterRoutine: Routine = async function* (ctx: RoutineContext) {
       continue;
     }
 
-    // ── Refresh inventory (cargo + personal storage + faction storage) ──
+    // ── Clear cargo space for material withdrawal ──
     await bot.refreshCargo();
+    if (bot.docked && bot.inventory.length > 0) {
+      for (const item of bot.inventory) {
+        if (item.quantity <= 0) continue;
+        const lower = item.itemId.toLowerCase();
+        if (lower.includes("fuel") || lower.includes("energy_cell")) continue;
+        const dResp = await bot.exec("faction_deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        if (dResp.error) {
+          await bot.exec("deposit_items", { item_id: item.itemId, quantity: item.quantity });
+        }
+      }
+      await bot.refreshCargo();
+    }
+
+    // ── Refresh inventory (cargo + personal storage + faction storage) ──
     if (bot.docked) {
       await bot.refreshStorage();
       await bot.refreshFactionStorage();

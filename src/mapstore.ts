@@ -691,10 +691,10 @@ class MapStore {
       for (const poi of sys.pois) {
         for (const m of poi.market) {
           if (itemId && m.item_id !== itemId) continue;
-          if (m.best_sell !== null && m.sell_quantity > 0) {
+          if (m.best_sell !== null && m.best_sell > 0 && m.sell_quantity > 0) {
             sellListings.push({ itemId: m.item_id, itemName: m.item_name, systemId: sysId, poiId: poi.id, poiName: poi.name, price: m.best_sell, quantity: m.sell_quantity });
           }
-          if (m.best_buy !== null && m.buy_quantity > 0) {
+          if (m.best_buy !== null && m.best_buy > 0 && m.buy_quantity > 0) {
             buyListings.push({ itemId: m.item_id, itemName: m.item_name, systemId: sysId, poiId: poi.id, poiName: poi.name, price: m.best_buy, quantity: m.buy_quantity });
           }
         }

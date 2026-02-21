@@ -297,7 +297,14 @@ async function tryMissions(ctx: RoutineContext): Promise<void> {
     for (const mission of active) {
       const missionId = (mission.mission_id as string) || (mission.id as string) || "";
       if (!missionId) continue;
+      // Only try to complete missions marked as ready/completable
+      const status = ((mission.status as string) || "").toLowerCase();
+      if (status === "incomplete" || status === "in_progress") continue;
       const completeResp = await bot.exec("complete_mission", { mission_id: missionId });
+      if (completeResp.error) {
+        // Silently skip mission_incomplete — expected for in-progress missions
+        if (completeResp.error.code === "mission_incomplete") continue;
+      }
       if (!completeResp.error && completeResp.result) {
         const cr = completeResp.result as Record<string, unknown>;
         const earned = (cr.credits_earned as number) ?? 0;

@@ -175,7 +175,18 @@ export class Bot {
     }
 
     if (resp.error) {
-      this.log("error", `${command}: ${resp.error.message}`);
+      // Suppress noisy expected errors — callers handle these gracefully
+      const code = resp.error.code || "";
+      const quiet =
+        code === "mission_incomplete" ||
+        (command === "view_faction_storage" && code !== "session_invalid") ||
+        (command === "get_missions" && code !== "session_invalid") ||
+        (command === "complete_mission" && code === "mission_incomplete") ||
+        (command === "get_insurance_quote" && code !== "session_invalid") ||
+        (command === "survey_system" && code === "no_scanner");
+      if (!quiet) {
+        this.log("error", `${command}: ${resp.error.message}`);
+      }
     }
 
     return resp;
@@ -322,8 +333,11 @@ export class Bot {
     this._error = null;
     this._abortController = new AbortController();
 
-    const loggedIn = await this.login();
-    if (!loggedIn) return;
+    // Only login if we don't already have an active session
+    if (!this.api.getSession()) {
+      const loggedIn = await this.login();
+      if (!loggedIn) return;
+    }
 
     this.log("system", `Starting routine: ${routineName}`);
 
