@@ -1856,6 +1856,7 @@
         <div class="sidebar-item" onclick="switchSettingsTab('gas_harvester')">GasHarvester</div>
         <div class="sidebar-item" onclick="switchSettingsTab('ice_harvester')">IceHarvester</div>
         <div class="sidebar-item" onclick="switchSettingsTab('salvager')">Salvager</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('ai')">AI</div>
       </div>
       <div class="settings-panel" id="settingsContent">
         <!-- filled by JS -->
@@ -4549,6 +4550,8 @@ function renderSettingsPanel() {
     renderIceHarvesterSettings(panel);
   } else if (activeSettingsTab === 'salvager') {
     renderSalvagerSettings(panel);
+  } else if (activeSettingsTab === 'ai') {
+    renderAiSettings(panel);
   }
 }
 
@@ -5158,6 +5161,89 @@ function saveTraderSettings() {
   };
   send({ type: 'saveSettings', routine: 'trader', settings: s });
   settings.trader = s;
+}
+
+// ── AI Settings ────────────────────────────────────────────
+function renderAiSettings(panel) {
+  const a = settings.ai || {};
+  const baseUrl = a.baseUrl || '';
+  const apiKey = a.apiKey || '';
+  const model = a.model || '';
+  const cycleIntervalSec = a.cycleIntervalSec ?? 10;
+  const maxToolCallsPerCycle = a.maxToolCallsPerCycle ?? 40;
+  const captainsLogEveryN = a.captainsLogEveryN ?? 5;
+
+  const inputStyle = `style="background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;width:100%;box-sizing:border-box"`;
+
+  panel.innerHTML = `
+    <h3>AI Settings</h3>
+    <div class="settings-desc">Configure the LLM used by the AI routine. Values here override environment variables. Leave blank to use env vars (OPENAI_COMPAT_BASE_URL, OPENAI_COMPAT_API_KEY, AI_MODEL) or Ollama defaults.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Base URL</div>
+        <div class="setting-hint">OpenAI-compatible endpoint base URL, e.g. https://integrate.api.nvidia.com/v1 or http://localhost:11434/v1</div>
+      </div>
+      <input type="text" id="set-ai-baseUrl" value="${esc(baseUrl)}" placeholder="http://localhost:11434/v1" ${inputStyle}>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">API Key</div>
+        <div class="setting-hint">Bearer token for the LLM endpoint. Use "ollama" for local Ollama.</div>
+      </div>
+      <input type="password" id="set-ai-apiKey" value="${esc(apiKey)}" placeholder="ollama" ${inputStyle}>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Model</div>
+        <div class="setting-hint">Model name to use, e.g. llama3.2, z-ai/glm4.7, gpt-4o-mini</div>
+      </div>
+      <input type="text" id="set-ai-model" value="${esc(model)}" placeholder="llama3.2" ${inputStyle}>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cycle Interval (seconds)</div>
+        <div class="setting-hint">How long to sleep between AI decision cycles.</div>
+      </div>
+      <input type="number" id="set-ai-cycleIntervalSec" min="5" max="300" value="${cycleIntervalSec}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Max Tool Calls Per Cycle</div>
+        <div class="setting-hint">Safety cap on tool calls per cycle to prevent runaway loops.</div>
+      </div>
+      <input type="number" id="set-ai-maxToolCallsPerCycle" min="5" max="100" value="${maxToolCallsPerCycle}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Captain's Log Every N Cycles</div>
+        <div class="setting-hint">How often the AI writes a captain's log entry.</div>
+      </div>
+      <input type="number" id="set-ai-captainsLogEveryN" min="1" max="20" value="${captainsLogEveryN}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveAiSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveAiSettings() {
+  const s = {
+    baseUrl: document.getElementById('set-ai-baseUrl').value.trim(),
+    apiKey: document.getElementById('set-ai-apiKey').value.trim(),
+    model: document.getElementById('set-ai-model').value.trim(),
+    cycleIntervalSec: parseInt(document.getElementById('set-ai-cycleIntervalSec').value) || 10,
+    maxToolCallsPerCycle: parseInt(document.getElementById('set-ai-maxToolCallsPerCycle').value) || 40,
+    captainsLogEveryN: parseInt(document.getElementById('set-ai-captainsLogEveryN').value) || 5,
+  };
+  send({ type: 'saveSettings', routine: 'ai', settings: s });
+  settings.ai = s;
 }
 
 // ── Chat bot select ────────────────────────────────────────

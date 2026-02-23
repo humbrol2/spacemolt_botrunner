@@ -12,6 +12,7 @@ import { gasHarvesterRoutine } from "./routines/gas_harvester.js";
 import { iceHarvesterRoutine } from "./routines/ice_harvester.js";
 import { salvagerRoutine } from "./routines/salvager.js";
 import { hunterRoutine } from "./routines/hunter.js";
+import { aiRoutine } from "./routines/ai.js";
 import { mapStore } from "./mapstore.js";
 import { catalogStore } from "./catalogstore.js";
 import { WebServer, type WebAction, type WebActionResult } from "./web/server.js";
@@ -35,6 +36,7 @@ const ROUTINES: Record<string, { name: string; fn: Routine }> = {
   ice_harvester: { name: "IceHarvester", fn: iceHarvesterRoutine },
   salvager: { name: "Salvager", fn: salvagerRoutine },
   hunter: { name: "Hunter", fn: hunterRoutine },
+  ai: { name: "AI", fn: aiRoutine },
 };
 
 // ── Auto-discover existing sessions ─────────────────────────
