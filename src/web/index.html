@@ -1857,6 +1857,7 @@
         <div class="sidebar-item" onclick="switchSettingsTab('gas_harvester')">GasHarvester</div>
         <div class="sidebar-item" onclick="switchSettingsTab('ice_harvester')">IceHarvester</div>
         <div class="sidebar-item" onclick="switchSettingsTab('salvager')">Salvager</div>
+        <div class="sidebar-item" onclick="switchSettingsTab('hunter')">Hunter</div>
       </div>
       <div class="settings-panel" id="settingsContent">
         <!-- filled by JS -->
@@ -4568,6 +4569,8 @@ function renderSettingsPanel() {
     renderIceHarvesterSettings(panel);
   } else if (activeSettingsTab === 'salvager') {
     renderSalvagerSettings(panel);
+  } else if (activeSettingsTab === 'hunter') {
+    renderHunterSettings(panel);
   }
 }
 
@@ -7517,6 +7520,100 @@ function saveSalvagerSettings() {
   };
   send({ type: 'saveSettings', routine: 'salvager', settings: s });
   settings.salvager = s;
+}
+
+// ── Hunter ──────────────────────────────────────────────────
+function renderHunterSettings(panel) {
+  const h = settings.hunter || {};
+  const currentSystem = h.system || '';
+  const refuelThreshold = h.refuelThreshold ?? 40;
+  const repairThreshold = h.repairThreshold ?? 30;
+  const fleeThreshold = h.fleeThreshold ?? 20;
+  const onlyNPCs = h.onlyNPCs !== false;
+  const responseRange = h.responseRange ?? 3;
+
+  const systemOpts = ['<option value="">(auto — nearest low-sec)</option>'];
+  for (const sys of knownSystems) {
+    const sel = sys.id === currentSystem ? ' selected' : '';
+    const label = sys.name ? `${sys.name} (${sys.id})` : sys.id;
+    systemOpts.push(`<option value="${esc(sys.id)}"${sel}>${esc(label)}</option>`);
+  }
+  if (currentSystem && !knownSystems.find(s => s.id === currentSystem)) {
+    systemOpts.push(`<option value="${esc(currentSystem)}" selected>${esc(currentSystem)}</option>`);
+  }
+
+  panel.innerHTML = `
+    <h3>Hunter Settings</h3>
+    <div class="settings-desc">Pirate hunter bots patrol low-security systems, engage NPC pirates for bounties and loot, and respond to faction combat alerts from allied bots.</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Patrol System</div>
+        <div class="setting-hint">Fixed system to patrol. Leave empty to auto-find the nearest huntable (low/null-sec) system.</div>
+      </div>
+      <select id="set-hunter-system">${systemOpts.join('')}</select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refuel Threshold (%)</div>
+        <div class="setting-hint">Return to station to refuel when fuel drops below this percentage.</div>
+      </div>
+      <input type="number" id="set-hunter-refuelThreshold" min="20" max="80" value="${refuelThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Repair Threshold (%)</div>
+        <div class="setting-hint">Abort patrol and retreat to a high-security system when hull drops below this percentage.</div>
+      </div>
+      <input type="number" id="set-hunter-repairThreshold" min="20" max="80" value="${repairThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Flee Threshold (%)</div>
+        <div class="setting-hint">Emergency flee from an active fight when hull drops below this percentage.</div>
+      </div>
+      <input type="number" id="set-hunter-fleeThreshold" min="5" max="50" value="${fleeThreshold}">
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Attack Mode</div>
+        <div class="setting-hint">Restrict attacks to NPC pirates only, or also engage hostile players.</div>
+      </div>
+      <select id="set-hunter-onlyNPCs">
+        <option value="true"${onlyNPCs ? ' selected' : ''}>NPC Pirates Only (safe)</option>
+        <option value="false"${!onlyNPCs ? ' selected' : ''}>NPCs + Hostile Players</option>
+      </select>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Faction Alert Response Range (jumps)</div>
+        <div class="setting-hint">Max jumps away to respond when an allied bot broadcasts a [COMBAT WARNING] or [HULL DAMAGE] alert. Set to 0 to disable.</div>
+      </div>
+      <input type="number" id="set-hunter-responseRange" min="0" max="20" value="${responseRange}">
+    </div>
+
+    <div class="settings-save-bar">
+      <button class="primary" onclick="saveHunterSettings()">Save Settings</button>
+    </div>
+  `;
+}
+
+function saveHunterSettings() {
+  const s = {
+    system: document.getElementById('set-hunter-system').value,
+    refuelThreshold: parseInt(document.getElementById('set-hunter-refuelThreshold').value) || 40,
+    repairThreshold: parseInt(document.getElementById('set-hunter-repairThreshold').value) || 30,
+    fleeThreshold: parseInt(document.getElementById('set-hunter-fleeThreshold').value) || 20,
+    onlyNPCs: document.getElementById('set-hunter-onlyNPCs').value === 'true',
+    responseRange: parseInt(document.getElementById('set-hunter-responseRange').value) ?? 3,
+  };
+  send({ type: 'saveSettings', routine: 'hunter', settings: s });
+  settings.hunter = s;
 }
 
 // ── Shipyard ────────────────────────────────────────────────

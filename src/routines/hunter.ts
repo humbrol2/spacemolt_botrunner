@@ -52,6 +52,7 @@ function getHunterSettings(username?: string): {
   repairThreshold: number;
   fleeThreshold: number;
   onlyNPCs: boolean;
+  responseRange: number;
 } {
   const all = readSettings();
   const h = all.hunter || {};
@@ -63,6 +64,7 @@ function getHunterSettings(username?: string): {
     repairThreshold: (h.repairThreshold as number) || 30,
     fleeThreshold: (h.fleeThreshold as number) || 20,
     onlyNPCs: (h.onlyNPCs as boolean) !== false,
+    responseRange: (h.responseRange as number) ?? 3,
   };
 }
 
@@ -486,6 +488,77 @@ function findNextHuntSystem(fromSystemId: string): string | null {
   return null;
 }
 
+// ── Faction alert response ────────────────────────────────────
+
+/** Cooldown per system so we don't divert repeatedly (5 minutes). */
+const ALERT_RESPONSE_COOLDOWN_MS = 5 * 60 * 1000;
+/** Ignore faction alerts older than this (seconds, if API returns Unix time). */
+const ALERT_STALENESS_SECS = 5 * 60;
+
+/** Map<systemId, lastRespondedTimestamp> — persists across loop iterations. */
+const respondedAlerts = new Map<string, number>();
+
+/** Extract the system ID from a [COMBAT WARNING] or [HULL DAMAGE] faction message. */
+function extractAlertSystem(content: string): string | null {
+  // Both alert types end with:  ...| sys_xxxx/poi_yyyy
+  const match = content.match(/\|\s*(sys_[a-z0-9_]+)\//i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Scan recent faction chat for combat alerts from allied bots.
+ * Returns the nearest threatened system if it's within `responseRange` jumps,
+ * or null if there's nothing to respond to.
+ */
+async function checkFactionAlerts(
+  ctx: RoutineContext,
+  responseRange: number,
+): Promise<string | null> {
+  const { bot } = ctx;
+
+  const chatResp = await bot.exec("get_chat_history", { channel: "faction" });
+  if (chatResp.error || !chatResp.result) return null;
+
+  const r = chatResp.result as Record<string, unknown>;
+  const msgs = (
+    Array.isArray(chatResp.result) ? chatResp.result :
+    Array.isArray(r.messages) ? r.messages :
+    Array.isArray(r.history) ? r.history :
+    []
+  ) as Array<Record<string, unknown>>;
+
+  const nowSecs = Date.now() / 1000;
+  const nowMs = Date.now();
+
+  // Walk from newest → oldest (slice().reverse() in case order is oldest-first)
+  for (const msg of [...msgs].reverse()) {
+    const content = (msg.content as string) || (msg.message as string) || (msg.text as string) || "";
+    if (!content.includes("[COMBAT WARNING]") && !content.includes("[HULL DAMAGE]")) continue;
+
+    // Check message age if a timestamp is available
+    const ts = (msg.timestamp as number) || (msg.created_at as number) || 0;
+    if (ts > 0 && nowSecs - ts > ALERT_STALENESS_SECS) continue;
+
+    const alertSystem = extractAlertSystem(content);
+    if (!alertSystem) continue;
+
+    // Already here — no need to divert
+    if (alertSystem === bot.system) continue;
+
+    // Cooldown per system
+    const lastMs = respondedAlerts.get(alertSystem) ?? 0;
+    if (nowMs - lastMs < ALERT_RESPONSE_COOLDOWN_MS) continue;
+
+    // Check proximity via known map routes
+    const route = mapStore.findRoute(bot.system, alertSystem);
+    if (!route || route.length > responseRange) continue;
+
+    return alertSystem;
+  }
+
+  return null;
+}
+
 // ── Hunter routine ───────────────────────────────────────────
 
 export const hunterRoutine: Routine = async function* (ctx: RoutineContext) {
@@ -533,6 +606,28 @@ export const hunterRoutine: Routine = async function* (ctx: RoutineContext) {
         await ensureUndocked(ctx);
       }
       continue;
+    }
+
+    // ── Faction alert check — divert if an ally is nearby and under attack ──
+    yield "faction_alert_check";
+    const alertTarget = await checkFactionAlerts(ctx, settings.responseRange);
+    if (alertTarget) {
+      const sys = mapStore.getSystem(alertTarget);
+      const route = mapStore.findRoute(bot.system, alertTarget);
+      const jumps = route ? route.length : "?";
+      ctx.log("combat", `Faction alert! ${sys?.name || alertTarget} is under attack (${jumps} jump(s)) — diverting to assist`);
+      respondedAlerts.set(alertTarget, Date.now());
+      try {
+        await bot.exec("chat", {
+          channel: "faction",
+          content: `[HUNTER RESPONSE] ${bot.username} en route to ${sys?.name || alertTarget} (${jumps} jump(s)) to assist`,
+        });
+      } catch { /* non-fatal */ }
+      // Override patrol target for this cycle
+      const arrived = await navigateToSystem(ctx, alertTarget, safetyOpts);
+      if (!arrived) {
+        ctx.log("error", `Could not reach ${alertTarget} — resuming normal patrol`);
+      }
     }
 
     // ── Navigate to a huntable (low/unregulated) system ──
