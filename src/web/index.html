@@ -2218,7 +2218,8 @@ function connect() {
         break;
       case 'status':
         bots = msg.bots || [];
-        renderBots();
+        // Skip re-rendering the bot list if a routine select is focused (user is picking)
+        if (!document.activeElement?.closest?.('.row-actions')) renderBots();
         renderStats();
         updateChatBotSelect();
         // Update profile if open
